@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- GridFront 3x3 grid logo -->
+    <!-- Row 1 -->
+    <path android:pathData="M31,30h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
+        android:fillColor="#4A84BF"/>
+    <path android:pathData="M44,30h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
+        android:fillColor="#3CABD6"/>
+    <path android:pathData="M57,30h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
+        android:fillColor="#90D2E8"/>
+    <!-- Row 2 -->
+    <path android:pathData="M31,41h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
+        android:fillColor="#4A84BF"/>
+    <path android:pathData="M44,41h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
+        android:fillColor="#3CABD6"/>
+    <path android:pathData="M57,41h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
+        android:fillColor="#90D2E8"/>
+    <!-- Row 3 -->
+    <path android:pathData="M31,52h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
+        android:fillColor="#4A84BF"/>
+    <path android:pathData="M44,52h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
+        android:fillColor="#3CABD6"/>
+    <path android:pathData="M57,52h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
+        android:fillColor="#90D2E8"/>
+    <!-- Detect accent: radar sweep + detection dot -->
+    <path android:pathData="M70,42L76,36"
+        android:strokeColor="#3CABD6"
+        android:strokeWidth="1.5"/>
+    <path android:pathData="M76,36m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0"
+        android:fillColor="#EF4444"/>
+</vector>

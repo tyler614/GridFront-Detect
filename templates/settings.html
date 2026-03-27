@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% set active_page = "settings" %}
+
+{% block content %}
+<div class="p-4 flex flex-col gap-3" style="padding-bottom:24px;">
+    <h1 style="font-size:20px; font-weight:700;">Settings</h1>
+
+    <!-- Connectivity -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Connectivity</div>
+            <div class="card-description">Configure how the display connects to the network</div>
+        </div>
+        <div class="card-content">
+            <div class="form-group">
+                <label class="label">Connection Mode</label>
+                <select class="select" id="conn-mode" onchange="toggleConnFields()">
+                    <option value="wifi">WiFi</option>
+                    <option value="sim">SIM Card (LTE)</option>
+                </select>
+            </div>
+            <div id="wifi-fields">
+                <div class="form-group">
+                    <label class="label">WiFi Network</label>
+                    <div class="flex gap-2">
+                        <input class="input" id="wifi-ssid" placeholder="Network name" style="flex:1;" />
+                        <button class="btn btn-outline btn-sm" onclick="scanWifi()">Scan</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="label">WiFi Password</label>
+                    <input class="input" id="wifi-pass" type="password" placeholder="Password" />
+                </div>
+            </div>
+            <div id="sim-fields" style="display:none;">
+                <div class="form-group">
+                    <label class="label">APN</label>
+                    <input class="input" id="sim-apn" placeholder="e.g. internet" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Platform -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">GridFront Platform</div>
+            <div class="card-description">Connect this display to your GridFront account</div>
+        </div>
+        <div class="card-content">
+            <div class="form-group">
+                <label class="label">Platform URL</label>
+                <input class="input" id="platform-url" placeholder="https://platform.gridfront.io" />
+            </div>
+            <div class="form-group">
+                <label class="label">API Key</label>
+                <input class="input" id="platform-key" type="password" placeholder="Your API key" />
+            </div>
+            <div class="form-group">
+                <label class="label">Tenant ID</label>
+                <input class="input" id="platform-tenant" placeholder="Tenant UUID" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Zones -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Detection Zones</div>
+            <div class="card-description">Set proximity alert thresholds in meters</div>
+        </div>
+        <div class="card-content">
+            <div class="form-group">
+                <label class="label" style="color:var(--status-danger);">Danger Zone (m)</label>
+                <input class="input" id="zone-danger" type="number" step="0.5" />
+            </div>
+            <div class="form-group">
+                <label class="label" style="color:var(--status-warning);">Warning Zone (m)</label>
+                <input class="input" id="zone-warning" type="number" step="0.5" />
+            </div>
+            <div class="form-group">
+                <label class="label">Max Range (m)</label>
+                <input class="input" id="zone-max" type="number" step="1" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Alerts</div>
+            <div class="card-description">Audio and visual alert settings</div>
+        </div>
+        <div class="card-content">
+            <div class="form-row">
+                <div class="form-row-label">
+                    <div class="label" style="margin-bottom:0;">Sound Alerts</div>
+                    <div class="label-description">Play audio when persons detected</div>
+                </div>
+                <button class="toggle" id="toggle-sound" onclick="toggleBtn(this)"></button>
+            </div>
+            <div class="form-row">
+                <div class="form-row-label">
+                    <div class="label" style="margin-bottom:0;">Danger Alarm</div>
+                    <div class="label-description">Repeating alarm for danger zone</div>
+                </div>
+                <select class="select" id="danger-sound" style="width:120px;min-height:36px;font-size:14px;">
+                    <option value="alarm">Alarm</option>
+                    <option value="beep">Beep</option>
+                    <option value="siren">Siren</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <div class="form-row-label">
+                    <div class="label" style="margin-bottom:0;">Warning Chime</div>
+                    <div class="label-description">Single tone for warning zone</div>
+                </div>
+                <select class="select" id="warning-sound" style="width:120px;min-height:36px;font-size:14px;">
+                    <option value="chime">Chime</option>
+                    <option value="beep">Beep</option>
+                    <option value="tone">Tone</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Display -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Display</div>
+        </div>
+        <div class="card-content">
+            <div class="form-group">
+                <label class="label">Brightness</label>
+                <input type="range" id="brightness" min="10" max="100" value="80"
+                       style="width:100%;accent-color:var(--chart-1);" />
+            </div>
+            <div class="form-row">
+                <div class="form-row-label">
+                    <div class="label" style="margin-bottom:0;">Machine Name</div>
+                </div>
+                <input class="input" id="machine-name" style="width:160px;min-height:36px;font-size:14px;" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex gap-2">
+        <button class="btn btn-primary w-full" onclick="saveSettings()">Save Settings</button>
+    </div>
+
+    <div class="card mt-2">
+        <div class="card-content">
+            <div class="flex justify-between items-center">
+                <div>
+                    <div class="text-sm" style="font-weight:600;">Device Info</div>
+                    <div class="text-xs text-muted mt-2">Oukitel RT3 Pro</div>
+                    <div class="text-xs text-muted">GridFront Safety Display v0.1.0</div>
+                </div>
+                <button class="btn btn-outline btn-sm" onclick="if(confirm('Reset all settings?')){resetSettings();}">
+                    Reset
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleBtn(el) {
+    el.classList.toggle('active');
+}
+
+function toggleConnFields() {
+    const mode = document.getElementById('conn-mode').value;
+    document.getElementById('wifi-fields').style.display = mode === 'wifi' ? 'block' : 'none';
+    document.getElementById('sim-fields').style.display = mode === 'sim' ? 'block' : 'none';
+}
+
+function scanWifi() {
+    alert('WiFi scanning requires native Android integration. Enter the network name manually for now.');
+}
+
+async function loadSettings() {
+    const cfg = await fetch('/api/config').then(r => r.json());
+
+    document.getElementById('conn-mode').value = cfg.connectivity?.mode || 'wifi';
+    document.getElementById('wifi-ssid').value = cfg.connectivity?.wifi_ssid || '';
+    document.getElementById('wifi-pass').value = cfg.connectivity?.wifi_password || '';
+    document.getElementById('sim-apn').value = cfg.connectivity?.apn || '';
+    document.getElementById('platform-url').value = cfg.platform?.url || '';
+    document.getElementById('platform-key').value = cfg.platform?.api_key || '';
+    document.getElementById('platform-tenant').value = cfg.platform?.tenant_id || '';
+    document.getElementById('zone-danger').value = cfg.zones?.danger_m || 3;
+    document.getElementById('zone-warning').value = cfg.zones?.warning_m || 7;
+    document.getElementById('zone-max').value = cfg.zones?.max_range_m || 10;
+    document.getElementById('machine-name').value = cfg.machine_name || '';
+    document.getElementById('brightness').value = cfg.display?.brightness || 80;
+
+    const soundToggle = document.getElementById('toggle-sound');
+    if (cfg.alerts?.sound_enabled) soundToggle.classList.add('active');
+    document.getElementById('danger-sound').value = cfg.alerts?.danger_sound || 'alarm';
+    document.getElementById('warning-sound').value = cfg.alerts?.warning_sound || 'chime';
+
+    toggleConnFields();
+}
+
+async function saveSettings() {
+    const config = {
+        machine_name: document.getElementById('machine-name').value,
+        connectivity: {
+            mode: document.getElementById('conn-mode').value,
+            wifi_ssid: document.getElementById('wifi-ssid').value,
+            wifi_password: document.getElementById('wifi-pass').value,
+            apn: document.getElementById('sim-apn').value,
+        },
+        platform: {
+            url: document.getElementById('platform-url').value,
+            api_key: document.getElementById('platform-key').value,
+            tenant_id: document.getElementById('platform-tenant').value,
+        },
+        zones: {
+            danger_m: parseFloat(document.getElementById('zone-danger').value) || 3,
+            warning_m: parseFloat(document.getElementById('zone-warning').value) || 7,
+            max_range_m: parseFloat(document.getElementById('zone-max').value) || 10,
+        },
+        alerts: {
+            sound_enabled: document.getElementById('toggle-sound').classList.contains('active'),
+            danger_sound: document.getElementById('danger-sound').value,
+            warning_sound: document.getElementById('warning-sound').value,
+        },
+        display: {
+            theme: 'dark',
+            brightness: parseInt(document.getElementById('brightness').value),
+        },
+    };
+
+    await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+    });
+
+    // Brief confirmation
+    const btn = event.target;
+    btn.textContent = 'Saved!';
+    setTimeout(() => btn.textContent = 'Save Settings', 1500);
+}
+
+async function resetSettings() {
+    await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+    });
+    loadSettings();
+}
+
+loadSettings();
+</script>
+{% endblock %}

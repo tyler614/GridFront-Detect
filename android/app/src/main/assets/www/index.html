@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#F8F8F8">
+    <title>GridFront Detect</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app" class="app-container">
+        <!-- Header -->
+        <header class="top-header">
+            <div class="logo">
+                <svg class="logo-icon" width="24" height="24" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="1" y="1" width="8" height="8" rx="2" fill="#4A84BF"/>
+                    <rect x="12" y="1" width="8" height="8" rx="2" fill="#3CABD6"/>
+                    <rect x="23" y="1" width="8" height="8" rx="2" fill="#90D2E8"/>
+                    <rect x="1" y="12" width="8" height="8" rx="2" fill="#4A84BF"/>
+                    <rect x="12" y="12" width="8" height="8" rx="2" fill="#3CABD6"/>
+                    <rect x="23" y="12" width="8" height="8" rx="2" fill="#90D2E8"/>
+                    <rect x="1" y="23" width="8" height="8" rx="2" fill="#4A84BF"/>
+                    <rect x="12" y="23" width="8" height="8" rx="2" fill="#3CABD6"/>
+                    <rect x="23" y="23" width="8" height="8" rx="2" fill="#90D2E8"/>
+                </svg>
+                GridFront <span>Detect</span>
+            </div>
+            <div class="status-badge connected" id="conn-badge">
+                <div class="status-dot"></div>
+                <span id="conn-text">Demo</span>
+            </div>
+        </header>
+
+        <!-- Zone Banner -->
+        <div class="zone-banner clear" id="zone-banner">ALL CLEAR</div>
+
+        <!-- Page Container -->
+        <main class="page-content" id="page-content"></main>
+
+        <!-- Bottom Nav -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-page="radar" onclick="navigate('radar')">
+                <i data-lucide="radar"></i>
+                Radar
+            </button>
+            <button class="nav-item" data-page="cameras" onclick="navigate('cameras')">
+                <i data-lucide="camera"></i>
+                Cameras
+            </button>
+            <button class="nav-item" data-page="alerts" onclick="navigate('alerts')">
+                <i data-lucide="bell"></i>
+                Alerts
+            </button>
+            <button class="nav-item" data-page="settings" onclick="navigate('settings')">
+                <i data-lucide="settings"></i>
+                Settings
+            </button>
+        </nav>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
