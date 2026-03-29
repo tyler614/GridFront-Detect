@@ -42,25 +42,12 @@ GF.scene = (function() {
   scene.add(ground);
   scene.add(new THREE.GridHelper(30, 30, 0xD0D2D5, 0xE0E2E5));
 
-  // Zone rings
-  function addRing(inner, outer, color, opacity) {
-    var ring = new THREE.Mesh(
-      new THREE.RingGeometry(inner, outer, 128),
-      new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity, side: THREE.DoubleSide })
-    );
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.y = 0.02;
-    scene.add(ring);
-  }
-  addRing(3.44, 3.56, '#EF4444', 0.8);
-  addRing(5.95, 6.05, '#F59E0B', 0.6);
-  addRing(11.9, 12.1, '#44A5D6', 0.3);
+  // Zone rings are now managed by zone-renderer.js (GF.zones)
 
   return {
     scene: scene,
     renderer: renderer,
     camera: camera,
-    container: container,
-    addRing: addRing
+    container: container
   };
 })();

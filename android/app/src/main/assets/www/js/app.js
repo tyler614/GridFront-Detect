@@ -7,12 +7,24 @@
   var renderer = GF.scene.renderer;
   var camera = GF.scene.camera;
 
+  // Initialize zone rings (config-reactive, animated on breach)
+  GF.zones.init(scene);
+
   // Host machine — the equipment this tablet is mounted on
   var host = new THREE.Group();
   scene.add(host);
   GF.createObject('wheel_loader', null, function(model) {
     host.add(model);
   });
+
+  // Load config from API and apply zone distances
+  if (GF.api && typeof GF.api.getConfig === 'function') {
+    GF.api.getConfig().then(function(cfg) {
+      if (cfg && cfg.zones) {
+        GF.zones.setConfig(cfg.zones);
+      }
+    }).catch(function() { /* API not available */ });
+  }
 
   // Animation loop
   var startTime = performance.now();
@@ -26,11 +38,8 @@
     lastTime = now;
 
     GF.orbit.update();
-
-    // Detection renderer handles live/mock switching internally
     GF.detection.update(t, dt);
-
-    // Pass stats (including mode, fps, zone, summary) to HUD
+    GF.zones.update(GF.detection.stats, dt);
     GF.hud.update(GF.detection.stats);
 
     renderer.render(scene, camera);
