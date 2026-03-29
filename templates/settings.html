@@ -5,6 +5,29 @@
 <div class="p-4 flex flex-col gap-3" style="padding-bottom:24px;">
     <h1 style="font-size:20px; font-weight:700;">Settings</h1>
 
+    <!-- Machine Profile -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Machine Profile</div>
+            <div class="card-description">Select the machine type this display is mounted on</div>
+        </div>
+        <div class="card-content">
+            <div class="form-group">
+                <label class="label">Machine Type</label>
+                <select class="select" id="machine-type" onchange="onMachineTypePreview()">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div id="machine-info" style="display:none;">
+                <div class="form-group">
+                    <div class="text-sm text-muted" id="machine-model"></div>
+                    <div class="text-xs text-muted mt-2" id="machine-dimensions"></div>
+                </div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="applyMachineProfile()">Apply Profile</button>
+        </div>
+    </div>
+
     <!-- Connectivity -->
     <div class="card">
         <div class="card-header">
@@ -82,6 +105,17 @@
                 <label class="label">Max Range (m)</label>
                 <input class="input" id="zone-max" type="number" step="1" />
             </div>
+        </div>
+    </div>
+
+    <!-- Detection Classes -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Detection Classes</div>
+            <div class="card-description">Enable or disable detection for each object class and set priority levels</div>
+        </div>
+        <div class="card-content" id="detection-classes-list">
+            <div class="text-sm text-muted">Loading...</div>
         </div>
     </div>
 
@@ -166,6 +200,9 @@
 </div>
 
 <script>
+let _machineProfiles = {};
+let _detectionConfig = {};
+
 function toggleBtn(el) {
     el.classList.toggle('active');
 }
@@ -180,8 +217,115 @@ function scanWifi() {
     alert('WiFi scanning requires native Android integration. Enter the network name manually for now.');
 }
 
+/* --- Machine Profile --- */
+
+function formatMachineLabel(key) {
+    return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+async function loadMachineProfiles() {
+    _machineProfiles = await fetch('/api/machines').then(r => r.json());
+    const sel = document.getElementById('machine-type');
+    sel.innerHTML = '';
+    for (const [key, profile] of Object.entries(_machineProfiles)) {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = formatMachineLabel(key);
+        sel.appendChild(opt);
+    }
+}
+
+function onMachineTypePreview() {
+    const key = document.getElementById('machine-type').value;
+    const info = document.getElementById('machine-info');
+    const profile = _machineProfiles[key];
+    if (!profile) { info.style.display = 'none'; return; }
+    info.style.display = 'block';
+    document.getElementById('machine-model').textContent = 'Example: ' + (profile.example_model || key);
+    const d = profile.dimensions || {};
+    document.getElementById('machine-dimensions').textContent =
+        'Dimensions: ' + (d.length_m || '?') + 'L x ' + (d.width_m || '?') + 'W x ' + (d.height_m || '?') + 'H (m)';
+}
+
+async function applyMachineProfile() {
+    const key = document.getElementById('machine-type').value;
+    if (!key) return;
+    const resp = await fetch('/api/machines/' + key + '/activate', { method: 'POST' });
+    const result = await resp.json();
+    // Update zone fields with the machine's defaults
+    const profile = _machineProfiles[key];
+    if (profile?.default_zones) {
+        const z = profile.default_zones;
+        if (z.danger_m != null) document.getElementById('zone-danger').value = z.danger_m;
+        if (z.warning_m != null) document.getElementById('zone-warning').value = z.warning_m;
+        if (z.max_range_m != null) document.getElementById('zone-max').value = z.max_range_m;
+    }
+}
+
+/* --- Detection Classes --- */
+
+function priorityBadgeClass(priority) {
+    switch (priority) {
+        case 'critical': return 'badge-danger';
+        case 'warning': return 'badge-warning';
+        case 'info': return 'badge-ok';
+        default: return 'badge-muted';
+    }
+}
+
+async function loadDetectionConfig() {
+    _detectionConfig = await fetch('/api/detection/config').then(r => r.json());
+    const container = document.getElementById('detection-classes-list');
+    container.innerHTML = '';
+    for (const [cls, settings] of Object.entries(_detectionConfig)) {
+        const row = document.createElement('div');
+        row.className = 'form-row';
+        row.style.alignItems = 'center';
+        row.innerHTML =
+            '<div class="form-row-label" style="flex:1;min-width:0;">' +
+                '<div class="label" style="margin-bottom:0;">' + formatMachineLabel(cls) + '</div>' +
+            '</div>' +
+            '<select class="select detection-priority" data-class="' + cls + '" ' +
+                'style="width:100px;min-height:36px;font-size:13px;margin-right:8px;">' +
+                '<option value="critical"' + (settings.priority === 'critical' ? ' selected' : '') + '>Critical</option>' +
+                '<option value="warning"' + (settings.priority === 'warning' ? ' selected' : '') + '>Warning</option>' +
+                '<option value="info"' + (settings.priority === 'info' ? ' selected' : '') + '>Info</option>' +
+                '<option value="ignore"' + (settings.priority === 'ignore' ? ' selected' : '') + '>Ignore</option>' +
+            '</select>' +
+            '<button class="toggle detection-toggle' + (settings.enabled ? ' active' : '') + '" data-class="' + cls + '" onclick="toggleBtn(this)"></button>';
+        container.appendChild(row);
+    }
+}
+
+function gatherDetectionConfig() {
+    const config = {};
+    document.querySelectorAll('.detection-toggle').forEach(el => {
+        const cls = el.dataset.class;
+        config[cls] = config[cls] || {};
+        config[cls].enabled = el.classList.contains('active');
+    });
+    document.querySelectorAll('.detection-priority').forEach(el => {
+        const cls = el.dataset.class;
+        config[cls] = config[cls] || {};
+        config[cls].priority = el.value;
+    });
+    return config;
+}
+
+/* --- Load / Save --- */
+
 async function loadSettings() {
-    const cfg = await fetch('/api/config').then(r => r.json());
+    const [cfg] = await Promise.all([
+        fetch('/api/config').then(r => r.json()),
+        loadMachineProfiles(),
+        loadDetectionConfig(),
+    ]);
+
+    // Machine type
+    if (cfg.machine_type) {
+        document.getElementById('machine-type').value = cfg.machine_type;
+        onMachineTypePreview();
+    }
 
     document.getElementById('conn-mode').value = cfg.connectivity?.mode || 'wifi';
     document.getElementById('wifi-ssid').value = cfg.connectivity?.wifi_ssid || '';
@@ -207,6 +351,7 @@ async function loadSettings() {
 async function saveSettings() {
     const config = {
         machine_name: document.getElementById('machine-name').value,
+        machine_type: document.getElementById('machine-type').value,
         connectivity: {
             mode: document.getElementById('conn-mode').value,
             wifi_ssid: document.getElementById('wifi-ssid').value,
@@ -234,11 +379,19 @@ async function saveSettings() {
         },
     };
 
-    await fetch('/api/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-    });
+    // Save main config and detection config in parallel
+    await Promise.all([
+        fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config),
+        }),
+        fetch('/api/detection/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(gatherDetectionConfig()),
+        }),
+    ]);
 
     // Brief confirmation
     const btn = event.target;
