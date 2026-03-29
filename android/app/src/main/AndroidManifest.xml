@@ -31,7 +31,16 @@
         android:label="GridFront Detect"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true"
         tools:targetApi="34">
+
+        <!-- Disable WebView multi-process renderer — fixes "process is bad" on MediaTek -->
+        <meta-data
+            android:name="android.webkit.WebView.EnableSafeBrowsing"
+            android:value="false" />
+        <meta-data
+            android:name="android.webkit.WebView.MetricsOptOut"
+            android:value="true" />
 
         <!-- Main Activity — the kiosk display -->
         <activity
