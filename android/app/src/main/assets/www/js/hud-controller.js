@@ -1,30 +1,98 @@
 /* ═══════════════════════════════════════════════════════════
    GridFront Detect — HUD Controller
-   HUD DOM updates, alert banner logic
+   HUD DOM updates, alert banner logic, connection status
    ═══════════════════════════════════════════════════════════ */
 window.GF = window.GF || {};
 
 GF.hud = (function() {
   var alertBanner = document.getElementById('alert-banner');
+  var statusDot = document.getElementById('status-dot');
+  var headerSubtitle = document.querySelector('#header .subtitle');
+
+  // Find or create FPS display in the HUD
+  var fpsEl = document.getElementById('api-fps');
+  if (!fpsEl) {
+    var hud = document.getElementById('hud');
+    if (hud) {
+      var item = document.createElement('div');
+      item.className = 'hud-item';
+      item.innerHTML = '<span class="label">API FPS</span><span class="value" id="api-fps">--</span>';
+      hud.appendChild(item);
+      fpsEl = document.getElementById('api-fps');
+    }
+  }
+
+  // Status text — update the label inside the first hud-item
+  var statusLabel = null;
+  if (statusDot && statusDot.parentElement) {
+    statusLabel = statusDot.parentElement; // the <span class="label"> containing the dot
+  }
 
   function update(stats) {
-    document.getElementById('people-count').textContent = stats.people;
-    document.getElementById('equip-count').textContent = stats.equip;
-    document.getElementById('marker-count').textContent = stats.markers;
+    // People / equipment / markers counts
+    var peopleEl = document.getElementById('people-count');
+    var equipEl = document.getElementById('equip-count');
+    var markerEl = document.getElementById('marker-count');
+    if (peopleEl) peopleEl.textContent = stats.people;
+    if (equipEl) equipEl.textContent = stats.equip;
+    if (markerEl) markerEl.textContent = stats.markers;
 
+    // Nearest distance
     var nearestEl = document.getElementById('nearest-dist');
-    var zone = stats.closestDist < 3.5 ? 'danger' : stats.closestDist < 6 ? 'warning' : 'safe';
-    nearestEl.textContent = stats.closestDist.toFixed(1) + 'm';
-    nearestEl.style.color = zone === 'danger' ? '#EF4444' : zone === 'warning' ? '#F59E0B' : '#22384C';
+    if (nearestEl) {
+      var zone = stats.zone || (stats.closestDist < 3.5 ? 'DANGER' : stats.closestDist < 6 ? 'WARNING' : 'CLEAR');
+      nearestEl.textContent = stats.closestDist < Infinity ? stats.closestDist.toFixed(1) + 'm' : '\u2014';
+      nearestEl.style.color = zone === 'DANGER' ? '#EF4444' : zone === 'WARNING' ? '#F59E0B' : '#22384C';
+    }
 
-    if (zone === 'danger') {
+    // Connection status dot and label
+    var m = stats.mode || 'Mock';
+    if (statusDot) {
+      if (m === 'SSE' || m === 'Polling') {
+        statusDot.className = 'dot dot-green';
+      } else {
+        statusDot.className = 'dot dot-green'; // mock also green — scene is running
+      }
+    }
+    if (statusLabel) {
+      // Preserve the dot element, update text
+      var dotHtml = statusDot ? statusDot.outerHTML : '';
+      statusLabel.innerHTML = dotHtml + m;
+    }
+
+    // API FPS
+    if (fpsEl) {
+      fpsEl.textContent = stats.fps > 0 ? stats.fps.toFixed(0) : '--';
+    }
+
+    // Alert banner
+    var zoneState = stats.zone || 'CLEAR';
+    if (zoneState === 'DANGER') {
       alertBanner.style.display = 'block';
-      alertBanner.textContent = 'DANGER \u2014 Object at ' + stats.closestDist.toFixed(1) + 'm';
-      document.getElementById('status-dot').className = 'dot dot-red';
+      var distText = stats.closestDist < Infinity ? stats.closestDist.toFixed(1) + 'm' : '--';
+      alertBanner.textContent = 'DANGER \u2014 Object at ' + distText;
+      if (statusDot) statusDot.className = 'dot dot-red';
     } else {
       alertBanner.style.display = 'none';
-      document.getElementById('status-dot').className = 'dot dot-green';
     }
+
+    // Header subtitle — show zone state
+    if (headerSubtitle) {
+      var base = 'CAT 950 GC \u2014 Wheel Loader #1';
+      if (zoneState === 'DANGER') {
+        headerSubtitle.textContent = base + ' \u2022 DANGER ZONE';
+        headerSubtitle.style.color = '#EF4444';
+      } else if (zoneState === 'WARNING') {
+        headerSubtitle.textContent = base + ' \u2022 WARNING';
+        headerSubtitle.style.color = '#F59E0B';
+      } else {
+        headerSubtitle.textContent = base + ' \u2022 Clear';
+        headerSubtitle.style.color = '#6B7280';
+      }
+    }
+
+    // Re-grab statusDot after innerHTML update
+    statusDot = document.getElementById('status-dot');
   }
 
   return {

@@ -26,7 +26,11 @@
     lastTime = now;
 
     GF.orbit.update();
+
+    // Detection renderer handles live/mock switching internally
     GF.detection.update(t, dt);
+
+    // Pass stats (including mode, fps, zone, summary) to HUD
     GF.hud.update(GF.detection.stats);
 
     renderer.render(scene, camera);
