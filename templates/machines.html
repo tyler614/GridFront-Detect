@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% set active_page = "machines" %}
+
+{% block head %}
+<style>
+    .machine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .machine-card { cursor: pointer; transition: border-color 0.2s; }
+    .machine-card:hover { border-color: var(--muted-foreground); }
+    .machine-card.is-active { border-color: var(--status-ok); }
+
+    .active-banner {
+        background: var(--status-ok-bg);
+        border: 1px solid rgba(22, 163, 74, 0.3);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .active-banner .check-icon {
+        width: 32px; height: 32px;
+        background: var(--status-ok);
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+    }
+    .active-banner .check-icon svg { color: #121212; }
+
+    .dim-row {
+        display: flex; gap: 8px; flex-wrap: wrap;
+        margin-top: 8px;
+    }
+    .dim-chip {
+        background: var(--muted);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        color: var(--muted-foreground);
+    }
+
+    .zone-dots {
+        display: flex; gap: 6px; align-items: center;
+        margin-top: 6px; flex-wrap: wrap;
+    }
+    .zone-dot {
+        font-size: 11px; font-weight: 600;
+        padding: 1px 8px; border-radius: 9999px;
+    }
+    .zone-dot.danger { background: var(--status-danger-bg); color: var(--status-danger); }
+    .zone-dot.warning { background: var(--status-warning-bg); color: var(--status-warning); }
+    .zone-dot.max { background: var(--muted); color: var(--muted-foreground); }
+
+    .mount-section {
+        max-height: 0; overflow: hidden;
+        transition: max-height 0.3s ease;
+        border-top: 0px solid var(--border);
+    }
+    .mount-section.open {
+        max-height: 600px;
+        border-top-width: 1px;
+    }
+    .mount-item {
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .mount-item:last-child { border-bottom: none; }
+    .mount-label { font-size: 13px; font-weight: 500; }
+    .mount-pos { font-size: 11px; color: var(--muted-foreground); }
+
+    .toast {
+        position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+        background: var(--status-ok-bg); color: var(--status-ok);
+        padding: 10px 24px; border-radius: 9999px;
+        font-size: 13px; font-weight: 600;
+        opacity: 0; transition: opacity 0.3s;
+        pointer-events: none; z-index: 100;
+    }
+    .toast.show { opacity: 1; }
+
+    @media (max-width: 640px) {
+        .machine-grid { grid-template-columns: 1fr; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="p-4 flex flex-col gap-3" style="padding-bottom:24px;">
+    <!-- Header -->
+    <div>
+        <div class="flex items-center gap-2" style="margin-bottom:2px;">
+            <a href="/settings" class="btn btn-ghost btn-sm" style="min-height:32px;min-width:32px;padding:0;">
+                <i data-lucide="arrow-left" style="width:18px;height:18px;"></i>
+            </a>
+            <h1 style="font-size:20px; font-weight:700;">Machine Profiles</h1>
+        </div>
+        <p class="text-sm text-muted" style="margin-left:40px;">Select and configure your equipment</p>
+    </div>
+
+    <!-- Active Machine Banner -->
+    <div class="active-banner" id="active-banner" style="display:none;">
+        <div class="check-icon">
+            <i data-lucide="check" style="width:18px;height:18px;"></i>
+        </div>
+        <div>
+            <div style="font-weight:600;color:var(--status-ok);" id="active-name">--</div>
+            <div class="text-xs text-muted" id="active-example">--</div>
+        </div>
+    </div>
+
+    <!-- Machine Grid -->
+    <div class="machine-grid" id="machine-grid"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">Machine activated</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let machineData = {};
+let activeMachineType = null;
+let expandedCard = null;
+
+async function loadMachines() {
+    const [machinesRes, configRes] = await Promise.all([
+        fetch('/api/machines'),
+        fetch('/api/config')
+    ]);
+    machineData = await machinesRes.json();
+    const config = await configRes.json();
+    activeMachineType = config.machine_type || null;
+
+    renderBanner();
+    renderGrid();
+    lucide.createIcons();
+}
+
+function renderBanner() {
+    const banner = document.getElementById('active-banner');
+    if (!activeMachineType || !machineData[activeMachineType]) {
+        banner.style.display = 'none';
+        return;
+    }
+    const m = machineData[activeMachineType];
+    banner.style.display = 'flex';
+    document.getElementById('active-name').textContent = m.name;
+    document.getElementById('active-example').textContent = m.example;
+}
+
+function renderGrid() {
+    const grid = document.getElementById('machine-grid');
+    grid.innerHTML = '';
+
+    for (const [type, m] of Object.entries(machineData)) {
+        const isActive = type === activeMachineType;
+        const dims = m.dimensions || {};
+        const zones = m.default_zones || {};
+        const mounts = m.camera_mounts || [];
+        const cam = m.camera_spec || {};
+
+        const card = document.createElement('div');
+        card.className = 'card machine-card' + (isActive ? ' is-active' : '');
+        card.innerHTML = `
+            <div class="card-header" data-type="${type}">
+                <div class="flex justify-between items-center">
+                    <div style="flex:1;min-width:0;">
+                        <div class="card-title">${m.name}</div>
+                        <div class="card-description">${m.example}</div>
+                    </div>
+                    ${isActive
+                        ? '<span class="badge badge-ok">Active</span>'
+                        : `<button class="btn btn-outline btn-sm activate-btn" data-type="${type}" onclick="event.stopPropagation();activateMachine('${type}')">Activate</button>`
+                    }
+                </div>
+            </div>
+            <div class="card-content" data-type="${type}">
+                <!-- Dimensions -->
+                <div class="text-xs text-muted" style="font-weight:500;margin-bottom:4px;">Dimensions</div>
+                <div class="dim-row">
+                    <span class="dim-chip">L ${dims.length_m || '?'}m</span>
+                    <span class="dim-chip">W ${dims.width_m || '?'}m</span>
+                    <span class="dim-chip">H ${dims.height_m || '?'}m</span>
+                </div>
+
+                <!-- Default Zones -->
+                <div class="text-xs text-muted" style="font-weight:500;margin-top:10px;margin-bottom:2px;">Default Zones</div>
+                <div class="zone-dots">
+                    <span class="zone-dot danger">${zones.danger_m || '?'}m</span>
+                    <span class="zone-dot warning">${zones.warning_m || '?'}m</span>
+                    <span class="zone-dot max">${zones.max_range_m || '?'}m max</span>
+                </div>
+
+                <!-- Camera Info -->
+                <div style="margin-top:10px;" class="flex justify-between items-center">
+                    <span class="text-xs text-muted">${mounts.length} camera position${mounts.length !== 1 ? 's' : ''}</span>
+                    <span class="text-xs text-muted">${cam.hfov_deg || '?'}° HFOV &middot; ${cam.depth_range_m ? cam.depth_range_m[0] + '-' + cam.depth_range_m[1] + 'm' : '?'}</span>
+                </div>
+
+                <!-- Expand hint -->
+                <div class="text-xs text-muted" style="margin-top:8px;text-align:center;opacity:0.5;">
+                    <i data-lucide="chevron-down" style="width:14px;height:14px;display:inline;vertical-align:middle;"></i>
+                    tap for camera mounts
+                </div>
+            </div>
+
+            <!-- Expandable mount details -->
+            <div class="mount-section" id="mounts-${type}">
+                <div style="padding:10px 16px 4px 16px;">
+                    <div class="text-xs" style="font-weight:600;color:var(--foreground);">Camera Mount Positions</div>
+                </div>
+                ${mounts.map((mt, i) => {
+                    const pos = mt.position || [0,0,0];
+                    const rot = mt.rotation || [0,0,0];
+                    return `
+                    <div class="mount-item">
+                        <div>
+                            <div class="mount-label">${mt.label || 'Mount ' + (i+1)}</div>
+                            <div class="mount-pos">pos [${pos.map(v => v.toFixed(1)).join(', ')}] &middot; rot [${rot.map(v => v.toFixed(0)).join(', ')}]</div>
+                        </div>
+                        <span class="badge badge-muted">${getMountHint(mt.label)}</span>
+                    </div>`;
+                }).join('')}
+            </div>
+        `;
+
+        // Click to expand/collapse mounts
+        card.querySelector('.card-content').addEventListener('click', () => {
+            const section = document.getElementById('mounts-' + type);
+            if (expandedCard && expandedCard !== type) {
+                document.getElementById('mounts-' + expandedCard).classList.remove('open');
+            }
+            section.classList.toggle('open');
+            expandedCard = section.classList.contains('open') ? type : null;
+        });
+
+        grid.appendChild(card);
+    }
+}
+
+function getMountHint(label) {
+    if (!label) return '';
+    const l = label.toLowerCase();
+    if (l.includes('front')) return 'Front';
+    if (l.includes('rear') || l.includes('back')) return 'Rear';
+    if (l.includes('left')) return 'Left';
+    if (l.includes('right')) return 'Right';
+    if (l.includes('top') || l.includes('roof')) return 'Top';
+    return '';
+}
+
+async function activateMachine(type) {
+    const res = await fetch(`/api/machines/${type}/activate`, { method: 'POST' });
+    if (!res.ok) return;
+
+    activeMachineType = type;
+    renderBanner();
+    renderGrid();
+    lucide.createIcons();
+    showToast('Machine activated');
+}
+
+function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+loadMachines();
+</script>
+{% endblock %}
