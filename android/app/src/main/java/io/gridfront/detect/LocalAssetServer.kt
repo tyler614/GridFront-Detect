@@ -9,7 +9,7 @@ import java.net.Socket
 
 /**
  * Lightweight HTTP server that serves static files from assets/www/ and proxies
- * /api/* requests to the Flask backend on port 5555.
+ * /api/ requests to the Flask backend on port 5555.
  *
  * This lets the WebView load everything from a single origin (http://127.0.0.1:8080),
  * avoiding cross-origin issues between the static UI and the Python API.

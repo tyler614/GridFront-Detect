@@ -27,20 +27,21 @@ import androidx.appcompat.app.AppCompatActivity
  * assets/www/. When Device Owner is enabled, locks the device into this
  * app exclusively (Lock Task mode).
  *
- * The WebView loads from a local file:///android_asset/www/index.html which
- * contains the full radar + cameras + settings + alerts app.
+ * The WebView loads from http://127.0.0.1:8080/ served by LocalAssetServer,
+ * which proxies /api/ requests to the Flask backend on port 5555.
  */
 class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "GF_Main"
-        private const val LOCAL_URL = "file:///android_asset/www/index.html"
+        private const val LOCAL_URL = "http://127.0.0.1:8080/"
     }
 
     private lateinit var webView: WebView
     private lateinit var dpm: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
     private var wakeLock: PowerManager.WakeLock? = null
+    private var assetServer: LocalAssetServer? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,6 +95,9 @@ class MainActivity : AppCompatActivity() {
         // Now that content view is set, hide system UI and enable kiosk
         hideSystemUI()
         setupKioskMode()
+
+        // Start local asset server (serves www/ and proxies /api/ to Flask)
+        assetServer = LocalAssetServer(this).also { it.start() }
 
         // Load the bundled web app
         webView.loadUrl(LOCAL_URL)
@@ -186,6 +190,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         stopService(Intent(this, WebServerService::class.java))
+        assetServer?.stop()
         wakeLock?.release()
         webView.destroy()
         super.onDestroy()

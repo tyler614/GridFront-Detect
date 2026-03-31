@@ -3,12 +3,12 @@
    ═══════════════════════════════════════════════════════════ */
 window.GF = window.GF || {};
 
-// Tesla-style muted gray palette — uniform, clean, no bright colors
-GF.bodyMat = new THREE.MeshStandardMaterial({ color: '#9CA3AF', metalness: 0.15, roughness: 0.7 });
-GF.darkMat = new THREE.MeshStandardMaterial({ color: '#4B5563', roughness: 0.85 });
-GF.glassMat = new THREE.MeshStandardMaterial({ color: '#CBD5E1', metalness: 0.3, roughness: 0.3, transparent: true, opacity: 0.6 });
-GF.metalMat = new THREE.MeshStandardMaterial({ color: '#6B7280', metalness: 0.3, roughness: 0.5 });
-GF.frameMat = new THREE.MeshStandardMaterial({ color: '#4B5563', metalness: 0.4, roughness: 0.4 });
+// Dark scene palette — metallic, slightly reflective, designed for dark backgrounds
+GF.bodyMat = new THREE.MeshStandardMaterial({ color: '#8B939E', metalness: 0.25, roughness: 0.6 });
+GF.darkMat = new THREE.MeshStandardMaterial({ color: '#3D4451', roughness: 0.8 });
+GF.glassMat = new THREE.MeshStandardMaterial({ color: '#94A3B8', metalness: 0.4, roughness: 0.2, transparent: true, opacity: 0.5 });
+GF.metalMat = new THREE.MeshStandardMaterial({ color: '#7B8494', metalness: 0.4, roughness: 0.4 });
+GF.frameMat = new THREE.MeshStandardMaterial({ color: '#3D4451', metalness: 0.5, roughness: 0.35 });
 
 GF.mk = function(geo, mat, x, y, z, p) {
   var m = new THREE.Mesh(geo, mat);
@@ -52,9 +52,12 @@ GF.rbox = function(w, h, d, r, mat, x, y, z, parent) {
 // Wheel: tire (torus) + sidewall discs + hub
 GF.mkWheel = function(radius, width, x, y, z, parent, tireMat, hubMat) {
   var wg = new THREE.Group();
-  // Tire tread — torus gives the round rubber look
+  // Tire tread — torus stands upright (hole along X = wheel axle axis)
+  // rotation.z = π/2 rotates the torus so the ring is in the YZ plane, hole facing X.
+  // This means the torus extends ±(R+r) = ±radius in Y, so bottom at y_center − radius.
+  // Wheel group is placed at y = radius, giving bottom of tire at y = 0 (ground).
   var torus = new THREE.Mesh(new THREE.TorusGeometry(radius - width * 0.35, width * 0.35, 12, 24), tireMat);
-  torus.rotation.y = Math.PI / 2;
+  torus.rotation.z = Math.PI / 2;
   wg.add(torus);
   // Sidewalls — fill in the flat faces
   var side = new THREE.Mesh(new THREE.CylinderGeometry(radius - width * 0.1, radius - width * 0.1, width * 0.5, 20), tireMat);

@@ -7,7 +7,7 @@ window.GF = window.GF || {};
 GF.hud = (function() {
   var alertBanner = document.getElementById('alert-banner');
   var statusDot = document.getElementById('status-dot');
-  var headerSubtitle = document.querySelector('#header .subtitle');
+  var headerSubtitle = document.getElementById('machine-subtitle') || document.querySelector('#header .subtitle');
 
   // Find or create FPS display in the HUD
   var fpsEl = document.getElementById('api-fps');
@@ -42,22 +42,19 @@ GF.hud = (function() {
     if (nearestEl) {
       var zone = stats.zone || (stats.closestDist < 3.5 ? 'DANGER' : stats.closestDist < 6 ? 'WARNING' : 'CLEAR');
       nearestEl.textContent = stats.closestDist < Infinity ? stats.closestDist.toFixed(1) + 'm' : '\u2014';
-      nearestEl.style.color = zone === 'DANGER' ? '#EF4444' : zone === 'WARNING' ? '#F59E0B' : '#22384C';
+      nearestEl.style.color = zone === 'DANGER' ? '#EF4444' : zone === 'WARNING' ? '#F59E0B' : '#22c55e';
     }
 
     // Connection status dot and label
     var m = stats.mode || 'Mock';
+    var modeLabel = m === 'Mock' ? 'SIM' : 'LIVE';
     if (statusDot) {
-      if (m === 'SSE' || m === 'Polling') {
-        statusDot.className = 'dot dot-green';
-      } else {
-        statusDot.className = 'dot dot-green'; // mock also green — scene is running
-      }
+      statusDot.className = 'dot dot-green'; // always green — scene is running
     }
     if (statusLabel) {
       // Preserve the dot element, update text
       var dotHtml = statusDot ? statusDot.outerHTML : '';
-      statusLabel.innerHTML = dotHtml + m;
+      statusLabel.innerHTML = dotHtml + modeLabel;
     }
 
     // API FPS
@@ -87,7 +84,7 @@ GF.hud = (function() {
         headerSubtitle.style.color = '#F59E0B';
       } else {
         headerSubtitle.textContent = base + ' \u2022 Clear';
-        headerSubtitle.style.color = '#6B7280';
+        headerSubtitle.style.color = '#A6A6A6';
       }
     }
 

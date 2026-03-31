@@ -108,13 +108,13 @@ GF.zones = (function() {
     var ph = 28;
     var px = (size - pw) / 2;
     var py = (48 - ph) / 2;
-    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
     ctx.beginPath();
     ctx.roundRect(px, py, pw, ph, 4);
     ctx.fill();
 
     // Text
-    ctx.fillStyle = color;
+    ctx.fillStyle = '#F2F2F2';
     ctx.fillText(text, size / 2, 24);
 
     var texture = new THREE.CanvasTexture(canvas);

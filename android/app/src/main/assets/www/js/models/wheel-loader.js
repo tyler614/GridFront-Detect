@@ -21,11 +21,11 @@ GF.models.wheel_loader = function() {
   var hVent = new THREE.MeshStandardMaterial({ color: '#111827', roughness: 0.9 });
 
   // === REAR SECTION (engine compartment + counterweight) ===
-  // Rear main body — slightly tapered at back
-  rbox(2.4, 1.4, 2.2, 0.22, hb, 0, 0.7, -1.6, g);
+  // Rear main body — raised to clear 0.80m rear wheels; bottom at y=0.80
+  rbox(2.4, 1.4, 2.2, 0.22, hb, 0, 0.80, -1.6, g);
 
-  // Counterweight — rounded mass at very back
-  mk(new THREE.CylinderGeometry(1.2, 1.25, 1.3, 16, 1, false, -Math.PI * 0.5, Math.PI), hd, 0, 0.95, -2.8, g);
+  // Counterweight — rounded mass at very back; raised to match new rear body height
+  mk(new THREE.CylinderGeometry(1.2, 1.25, 1.3, 16, 1, false, -Math.PI * 0.5, Math.PI), hd, 0, 1.20, -2.8, g);
 
   // Engine hood — raised top section with slope
   rbox(2.0, 0.45, 1.8, 0.15, hb, 0, 2.1, -1.5, g);
@@ -33,26 +33,26 @@ GF.models.wheel_loader = function() {
   // Hood slope toward cab — capsule bridge
   mkr(new THREE.CapsuleGeometry(0.12, 1.6, 4, 8), hb, 0, 2.0, -0.6, Math.PI * 0.48, 0, 0, g);
 
-  // Exhaust stack — vertical pipe with cap
-  mk(new THREE.CylinderGeometry(0.08, 0.07, 0.8, 8), hd, -0.7, 2.7, -1.8, g);
-  mk(new THREE.CylinderGeometry(0.11, 0.08, 0.06, 8), hd, -0.7, 3.12, -1.8, g);
+  // Exhaust stack — vertical pipe with cap; raised 0.25m with rear body
+  mk(new THREE.CylinderGeometry(0.08, 0.07, 0.8, 8), hd, -0.7, 2.95, -1.8, g);
+  mk(new THREE.CylinderGeometry(0.11, 0.08, 0.06, 8), hd, -0.7, 3.37, -1.8, g);
 
-  // Air intake stack (right side)
-  mk(new THREE.CylinderGeometry(0.1, 0.09, 0.5, 8), hd, 0.7, 2.55, -1.6, g);
-  mk(new THREE.SphereGeometry(0.11, 8, 6), hd, 0.7, 2.82, -1.6, g);
+  // Air intake stack (right side); raised 0.25m
+  mk(new THREE.CylinderGeometry(0.1, 0.09, 0.5, 8), hd, 0.7, 2.80, -1.6, g);
+  mk(new THREE.SphereGeometry(0.11, 8, 6), hd, 0.7, 3.07, -1.6, g);
 
-  // Cooling vents — left side grille (horizontal slats)
+  // Cooling vents — left side grille (horizontal slats); shifted up with raised rear body
   for (var v = 0; v < 4; v++) {
-    rbox(0.06, 0.08, 1.2, 0.02, hVent, -1.22, 1.2 + v * 0.22, -1.6, g);
+    rbox(0.06, 0.08, 1.2, 0.02, hVent, -1.22, 1.45 + v * 0.22, -1.6, g);
   }
   // Cooling vents — right side grille
   for (var v2 = 0; v2 < 4; v2++) {
-    rbox(0.06, 0.08, 1.2, 0.02, hVent, 1.22, 1.2 + v2 * 0.22, -1.6, g);
+    rbox(0.06, 0.08, 1.2, 0.02, hVent, 1.22, 1.45 + v2 * 0.22, -1.6, g);
   }
 
   // Rear grille
   for (var rv = 0; rv < 3; rv++) {
-    rbox(1.6, 0.06, 0.06, 0.02, hVent, 0, 1.2 + rv * 0.25, -2.72, g);
+    rbox(1.6, 0.06, 0.06, 0.02, hVent, 0, 1.45 + rv * 0.25, -2.72, g);
   }
 
   // === ARTICULATION JOINT ===
@@ -152,30 +152,32 @@ GF.models.wheel_loader = function() {
   }
 
   // === WHEELS ===
-  // Front wheels — slightly larger (0.65m radius) — real loaders have bigger fronts
-  mkWheel(0.65, 0.45, -1.2, 0.65, 1.0, g, hd, hHub);
-  mkWheel(0.65, 0.45, 1.2, 0.65, 1.0, g, hd, hHub);
+  // Front wheels — 0.70m radius (CAT 950 GC ~700/70R25 tires)
+  // y_center = radius so bottom of tire sits at y = 0 (ground)
+  mkWheel(0.70, 0.48, -1.2, 0.70, 1.0, g, hd, hHub);
+  mkWheel(0.70, 0.48, 1.2, 0.70, 1.0, g, hd, hHub);
 
-  // Rear wheels (0.60m radius)
-  mkWheel(0.60, 0.42, -1.2, 0.60, -1.6, g, hd, hHub);
-  mkWheel(0.60, 0.42, 1.2, 0.60, -1.6, g, hd, hHub);
+  // Rear wheels — 0.80m radius (rear tires slightly larger on articulated loaders)
+  // y_center = radius so bottom of tire sits at y = 0 (ground)
+  mkWheel(0.80, 0.55, -1.2, 0.80, -1.6, g, hd, hHub);
+  mkWheel(0.80, 0.55, 1.2, 0.80, -1.6, g, hd, hHub);
 
   // === FENDERS ===
-  // Front fenders — half-cylinder arches
+  // Front fenders — half-cylinder arches; sized for 0.70m front wheels
   [-1.2, 1.2].forEach(function(x) {
-    var ff = mk(new THREE.CylinderGeometry(0.75, 0.75, 0.5, 12, 1, true, 0, Math.PI), hb, x, 1.0, 1.0, g);
+    var ff = mk(new THREE.CylinderGeometry(0.80, 0.80, 0.52, 12, 1, true, 0, Math.PI), hb, x, 1.0, 1.0, g);
     ff.rotation.y = (x > 0) ? Math.PI / 2 : -Math.PI / 2;
     // Fender lip — capsule trim along top edge
-    mkr(new THREE.CapsuleGeometry(0.025, 0.45, 3, 4), hd,
-      x + (x > 0 ? 0.04 : -0.04), 1.32, 1.0, 0, 0, Math.PI / 2, g);
+    mkr(new THREE.CapsuleGeometry(0.025, 0.48, 3, 4), hd,
+      x + (x > 0 ? 0.04 : -0.04), 1.38, 1.0, 0, 0, Math.PI / 2, g);
   });
 
-  // Rear fenders — slightly smaller
+  // Rear fenders — sized to arch over 0.80m rear wheels; center raised to y=1.10
   [-1.2, 1.2].forEach(function(x) {
-    var rf = mk(new THREE.CylinderGeometry(0.68, 0.68, 0.46, 12, 1, true, 0, Math.PI), hb, x, 0.95, -1.6, g);
+    var rf = mk(new THREE.CylinderGeometry(0.90, 0.90, 0.58, 12, 1, true, 0, Math.PI), hb, x, 1.10, -1.6, g);
     rf.rotation.y = (x > 0) ? Math.PI / 2 : -Math.PI / 2;
-    mkr(new THREE.CapsuleGeometry(0.025, 0.42, 3, 4), hd,
-      x + (x > 0 ? 0.04 : -0.04), 1.25, -1.6, 0, 0, Math.PI / 2, g);
+    mkr(new THREE.CapsuleGeometry(0.025, 0.54, 3, 4), hd,
+      x + (x > 0 ? 0.04 : -0.04), 1.50, -1.6, 0, 0, Math.PI / 2, g);
   });
 
   // === STEPS / LADDER (left side of cab) ===
