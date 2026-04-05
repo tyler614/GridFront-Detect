@@ -567,4 +567,19 @@ if __name__ == "__main__":
     )
     _pipeline_runner.start()
 
+    # Ensure clean shutdown releases OAK-D XLink on exit
+    import signal
+    import atexit
+
+    def _shutdown(*args):
+        print("\n[GridFront Detect] Shutting down — releasing camera...")
+        if _pipeline_runner is not None:
+            _pipeline_runner.stop()
+        print("[GridFront Detect] Camera released. Goodbye.")
+        raise SystemExit(0)
+
+    atexit.register(lambda: _pipeline_runner.stop() if _pipeline_runner else None)
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
+
     app.run(host="0.0.0.0", port=args.port, debug=False, threaded=True)

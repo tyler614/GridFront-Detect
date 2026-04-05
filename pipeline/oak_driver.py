@@ -423,13 +423,20 @@ class OakDriver:
             return False
 
     def _disconnect(self) -> None:
+        # Close the device explicitly first to release XLink
+        if self._device is not None:
+            try:
+                self._device.close()
+                logger.info("OAK-D device closed (XLink released)")
+            except Exception:
+                pass
+            self._device = None
         if hasattr(self, "_pipeline") and self._pipeline is not None:
             try:
                 self._pipeline.stop()
             except Exception:
                 pass
             self._pipeline = None
-        self._device = None
         self._q_rgb = None
         self._q_depth = None
         self._q_nn = None
