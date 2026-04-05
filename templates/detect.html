@@ -76,7 +76,7 @@
 
     .scene-panel {
         flex: 1 1 50%; position: relative;
-        background: #f0f0f0; overflow: hidden;
+        background: #f2f2f2; overflow: hidden;
     }
     .scene-panel canvas { display: block; }
 
@@ -585,138 +585,355 @@ function drawDebugBoxes() {
     });
 }
 
-// ── Tesla-style 3D Scene ────────────────────────────────
+// ── 3D Spatial View — Clean Tesla-style ───────────────────
 (function() {
     var container = document.getElementById('scene-panel');
 
-    var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    var renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(640, 300);
-    renderer.setClearColor(0xf0f0f0, 1);
+    renderer.setClearColor(0xf2f2f2, 1);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(renderer.domElement);
 
     var scene = new THREE.Scene();
-    scene.fog = new THREE.Fog(0xf0f0f0, 30, 60);
+    scene.fog = new THREE.Fog(0xf2f2f2, 25, 50);
 
-    // Camera — elevated behind origin, looking forward
-    var camera = new THREE.PerspectiveCamera(60, 640 / 300, 0.1, 100);
-    camera.position.set(0, 4, 3);
-    camera.lookAt(0, 0, -8);
+    // ── Camera — third-person, slightly elevated ──────────
+    var camera = new THREE.PerspectiveCamera(55, 640 / 300, 0.1, 80);
+    camera.position.set(0, 8, 10);
+    camera.lookAt(0, 0, -5);
 
-    // Lighting — bright, soft
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-    var dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-    dirLight.position.set(5, 10, 5);
-    scene.add(dirLight);
-    var fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-    fillLight.position.set(-5, 5, -5);
-    scene.add(fillLight);
+    // ── Lighting ──────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    scene.add(new THREE.HemisphereLight(0xddeeff, 0xd0d0d0, 0.35));
+    var sun = new THREE.DirectionalLight(0xffffff, 0.7);
+    sun.position.set(8, 20, 8);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = 1; sun.shadow.camera.far = 50;
+    sun.shadow.camera.left = -20; sun.shadow.camera.right = 20;
+    sun.shadow.camera.top = 20; sun.shadow.camera.bottom = -20;
+    scene.add(sun);
 
-    // Ground plane — light grey
-    var groundGeo = new THREE.PlaneGeometry(60, 60);
-    var groundMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.95 });
-    var ground = new THREE.Mesh(groundGeo, groundMat);
+    // ── Ground plane — clean, flat ────────────────────────
+    var ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(80, 80),
+        new THREE.MeshStandardMaterial({ color: 0xdcdcdc, roughness: 0.92 })
+    );
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = 0;
+    ground.receiveShadow = true;
     scene.add(ground);
 
-    // Grid overlay — subtle
-    var grid = new THREE.GridHelper(60, 60, 0xd0d0d0, 0xdcdcdc);
+    // Subtle grid
+    var grid = new THREE.GridHelper(80, 40, 0xc8c8c8, 0xd2d2d2);
     grid.position.y = 0.01;
     scene.add(grid);
 
-    // Person mesh pool — reusable person figures
-    var personPool = [];
-    var PERSON_COLOR = 0x555555;
+    // ── Machine + Camera FOV cones — loaded from profile ──
+    var machineGroup = new THREE.Group();
+    scene.add(machineGroup);
+    var fovGroup = new THREE.Group();
+    scene.add(fovGroup);
 
-    function createPersonMesh() {
-        var group = new THREE.Group();
-        var bodyMat = new THREE.MeshStandardMaterial({ color: PERSON_COLOR, roughness: 0.6 });
+    // Fetch machine profile and build 3D representation
+    var machineConfig = { type: 'wheel_loader' };
+    fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
+        machineConfig.type = cfg.machine_type || 'wheel_loader';
+        return fetch('/api/machines/' + machineConfig.type);
+    }).then(function(r) { return r.json(); }).then(function(profile) {
+        if (!profile || !profile.dimensions) return;
+        var dim = profile.dimensions;
+        var mW = dim.width_m, mL = dim.length_m, mH = dim.height_m || 2.5;
+        var matBody = new THREE.MeshStandardMaterial({ color: 0x8a8a96, roughness: 0.65, metalness: 0.1 });
 
-        // Body
-        var bodyGeo = new THREE.CylinderGeometry(0.2, 0.25, 1.0, 8);
-        var body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 0.9;
-        group.add(body);
+        // Chassis
+        var chassis = new THREE.Mesh(new THREE.BoxGeometry(mW, 0.5, mL), matBody);
+        chassis.position.y = 0.35; chassis.castShadow = true;
+        machineGroup.add(chassis);
 
-        // Head
-        var headGeo = new THREE.SphereGeometry(0.18, 8, 8);
-        var head = new THREE.Mesh(headGeo, bodyMat);
-        head.position.y = 1.6;
-        group.add(head);
+        // Cab
+        var cab = new THREE.Mesh(
+            new THREE.BoxGeometry(mW * 0.7, mH * 0.3, mL * 0.2),
+            new THREE.MeshStandardMaterial({ color: 0x7a7a88, roughness: 0.55, metalness: 0.15 })
+        );
+        cab.position.set(0, 0.6 + mH * 0.15, mL * 0.15);
+        cab.castShadow = true;
+        machineGroup.add(cab);
 
-        // Legs
-        var legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.7, 6);
-        var legL = new THREE.Mesh(legGeo, bodyMat);
-        legL.position.set(-0.1, 0.35, 0);
-        group.add(legL);
-        var legR = new THREE.Mesh(legGeo, bodyMat);
-        legR.position.set(0.1, 0.35, 0);
-        group.add(legR);
+        // Wheels
+        var wheelMat = new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.8 });
+        var wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 12);
+        [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(function(p) {
+            var w = new THREE.Mesh(wheelGeo, wheelMat);
+            w.rotation.z = Math.PI / 2;
+            w.position.set(p[0] * (mW / 2 + 0.05), 0.35, p[1] * (mL / 2 - 0.8));
+            w.castShadow = true;
+            machineGroup.add(w);
+        });
 
-        // Direction arrow — flat triangle on the ground pointing forward
-        var arrowShape = new THREE.Shape();
-        arrowShape.moveTo(0, 0.6);
-        arrowShape.lineTo(-0.2, 0);
-        arrowShape.lineTo(0.2, 0);
-        arrowShape.lineTo(0, 0.6);
-        var arrowGeo = new THREE.ShapeGeometry(arrowShape);
-        var arrowMat = new THREE.MeshBasicMaterial({ color: 0x3388ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
-        var arrow = new THREE.Mesh(arrowGeo, arrowMat);
-        arrow.rotation.x = -Math.PI / 2;
-        arrow.position.set(0, 0.03, -0.4);
-        group.add(arrow);
+        // Forward arrow
+        var arrShape = new THREE.Shape();
+        arrShape.moveTo(0, 0); arrShape.lineTo(-0.3, 0.6); arrShape.lineTo(0.3, 0.6);
+        var arrMesh = new THREE.Mesh(
+            new THREE.ShapeGeometry(arrShape),
+            new THREE.MeshBasicMaterial({ color: 0x4BA3C7, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+        );
+        arrMesh.rotation.x = -Math.PI / 2;
+        arrMesh.position.set(0, 0.62, -(mL / 2 + 0.2));
+        machineGroup.add(arrMesh);
 
-        group.visible = false;
-        scene.add(group);
-        return { group: group, mat: bodyMat, arrowMat: arrowMat };
+        // "FRONT" label
+        var lc = document.createElement('canvas'); lc.width = 128; lc.height = 32;
+        var lctx = lc.getContext('2d');
+        lctx.font = 'bold 16px -apple-system, system-ui, sans-serif';
+        lctx.textAlign = 'center'; lctx.fillStyle = '#4BA3C7';
+        lctx.fillText('FRONT', 64, 22);
+        var lSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(lc), transparent: true }));
+        lSprite.scale.set(2, 0.5, 1);
+        lSprite.position.set(0, 0.8, -(mL / 2 + 1.0));
+        machineGroup.add(lSprite);
+
+        // ── Camera FOV cones ──────────────────────────────
+        var spec = profile.camera_spec || { hfov_deg: 127, max_depth_m: 15 };
+        var hfov = spec.hfov_deg || 127;
+        var maxRange = spec.max_depth_m || 15;
+        var mounts = profile.camera_mounts || [];
+
+        var camColors = {
+            front: 0x4BA3C7,
+            rear: 0x2B6B9E,
+            left: 0x8CC8E0,
+            right: 0x8CC8E0,
+        };
+
+        mounts.forEach(function(mount) {
+            var pos = mount.position;  // [x, y, z] on machine
+            var rot = mount.rotation;  // [rx, ry, rz] in degrees
+            var color = camColors[mount.id] || 0x4BA3C7;
+
+            // FOV cone: triangle fan on the ground plane
+            var halfAngle = (hfov / 2) * Math.PI / 180;
+            var yawRad = (rot[1] || 0) * Math.PI / 180;
+
+            // Build cone shape as a filled sector on the ground
+            var segments = 32;
+            var coneShape = new THREE.Shape();
+            coneShape.moveTo(0, 0);
+            for (var si = 0; si <= segments; si++) {
+                var a = -halfAngle + (si / segments) * 2 * halfAngle;
+                coneShape.lineTo(Math.sin(a) * maxRange, -Math.cos(a) * maxRange);
+            }
+            coneShape.lineTo(0, 0);
+
+            var coneGeo = new THREE.ShapeGeometry(coneShape);
+            var coneMat = new THREE.MeshBasicMaterial({
+                color: color, transparent: true, opacity: 0.08, side: THREE.DoubleSide
+            });
+            var cone = new THREE.Mesh(coneGeo, coneMat);
+            cone.rotation.x = -Math.PI / 2;
+            cone.position.set(pos[0], 0.03, pos[2]);
+            cone.rotation.z = -yawRad;  // Rotate to camera direction
+            fovGroup.add(cone);
+
+            // FOV edge lines
+            var edgeMat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.3 });
+            var leftAngle = yawRad - halfAngle;
+            var rightAngle = yawRad + halfAngle;
+            var edgeGeo = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(pos[0], 0.05, pos[2]),
+                new THREE.Vector3(pos[0] + Math.sin(leftAngle) * maxRange, 0.05, pos[2] - Math.cos(leftAngle) * maxRange),
+            ]);
+            fovGroup.add(new THREE.Line(edgeGeo, edgeMat));
+
+            var edgeGeo2 = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(pos[0], 0.05, pos[2]),
+                new THREE.Vector3(pos[0] + Math.sin(rightAngle) * maxRange, 0.05, pos[2] - Math.cos(rightAngle) * maxRange),
+            ]);
+            fovGroup.add(new THREE.Line(edgeGeo2, edgeMat));
+
+            // Camera mount indicator — small sphere on machine
+            var camDot = new THREE.Mesh(
+                new THREE.SphereGeometry(0.12, 8, 8),
+                new THREE.MeshStandardMaterial({ color: color, roughness: 0.3, metalness: 0.2 })
+            );
+            camDot.position.set(pos[0], 0.65, pos[2]);
+            machineGroup.add(camDot);
+
+            // Camera label
+            var clc = document.createElement('canvas'); clc.width = 128; clc.height = 32;
+            var clctx = clc.getContext('2d');
+            clctx.font = '12px -apple-system, system-ui, sans-serif';
+            clctx.textAlign = 'center'; clctx.fillStyle = '#666';
+            clctx.fillText(mount.label, 64, 20);
+            var clSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(clc), transparent: true }));
+            clSprite.scale.set(1.2, 0.3, 1);
+            clSprite.position.set(pos[0], 1.0, pos[2]);
+            machineGroup.add(clSprite);
+        });
+    }).catch(function(e) { console.error('Machine profile load failed:', e); });
+
+    // ── Detection shapes by class ─────────────────────────
+    var SHAPES = {
+        person:         { type: 'person',  s: 1.0 },
+        excavator:      { type: 'machine', s: 2.5 },
+        'wheel-loader': { type: 'machine', s: 2.0 },
+        dozer:          { type: 'machine', s: 2.2 },
+        crane:          { type: 'machine', s: 3.0 },
+        'dump-truck':   { type: 'vehicle', s: 2.0 },
+        'cement-truck': { type: 'vehicle', s: 2.0 },
+        truck:          { type: 'vehicle', s: 1.8 },
+        car:            { type: 'vehicle', s: 1.4 },
+        cone:           { type: 'cone',    s: 0.5 },
+        barrier:        { type: 'barrier', s: 1.0 },
+        forklift:       { type: 'machine', s: 1.5 },
+        'skid-steer':   { type: 'machine', s: 1.5 },
+        'scissor-lift': { type: 'machine', s: 2.0 },
+        'boom-lift':    { type: 'machine', s: 2.5 },
+        telehandler:    { type: 'machine', s: 2.0 },
+        roller:         { type: 'machine', s: 2.0 },
+        compactor:      { type: 'machine', s: 1.8 },
+        grader:         { type: 'machine', s: 2.5 },
+    };
+
+    // ── Detection pool ────────────────────────────────────
+    var pool = [];
+    var POOL_SIZE = 40;
+    var OBJ_COLOR = 0x2B6B9E;
+
+    function createDet() {
+        var g = new THREE.Group();
+        var mat = new THREE.MeshStandardMaterial({ color: OBJ_COLOR, roughness: 0.55, metalness: 0.05 });
+
+        // Person — clean figure
+        var pG = new THREE.Group();
+        var torso = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.95, 10), mat);
+        torso.position.y = 0.88; torso.castShadow = true; pG.add(torso);
+        var head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), mat);
+        head.position.y = 1.55; head.castShadow = true; pG.add(head);
+        var armGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.7, 6);
+        pG.add(new THREE.Mesh(armGeo, mat)); pG.children[2].position.set(-0.28, 0.85, 0);
+        pG.add(new THREE.Mesh(armGeo, mat)); pG.children[3].position.set(0.28, 0.85, 0);
+        var legGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.7, 6);
+        pG.add(new THREE.Mesh(legGeo, mat)); pG.children[4].position.set(-0.1, 0.35, 0);
+        pG.add(new THREE.Mesh(legGeo, mat)); pG.children[5].position.set(0.1, 0.35, 0);
+        pG.visible = false; g.add(pG);
+
+        // Machine — box + cab
+        var mG = new THREE.Group();
+        var mb = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 1.8), mat);
+        mb.position.y = 0.5; mb.castShadow = true; mG.add(mb);
+        var mc = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.7), mat);
+        mc.position.set(0, 1.15, 0.3); mc.castShadow = true; mG.add(mc);
+        mG.visible = false; g.add(mG);
+
+        // Vehicle
+        var vG = new THREE.Group();
+        var vb = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.45, 2.2), mat);
+        vb.position.y = 0.32; vb.castShadow = true; vG.add(vb);
+        var vr = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.35, 1.2), mat);
+        vr.position.set(0, 0.72, -0.1); vr.castShadow = true; vG.add(vr);
+        vG.visible = false; g.add(vG);
+
+        // Cone
+        var cG = new THREE.Group();
+        var cm = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.55, 8), mat);
+        cm.position.y = 0.28; cm.castShadow = true; cG.add(cm);
+        cG.visible = false; g.add(cG);
+
+        // Barrier
+        var bG = new THREE.Group();
+        var bm = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.55, 0.35), mat);
+        bm.position.y = 0.28; bm.castShadow = true; bG.add(bm);
+        bG.visible = false; g.add(bG);
+
+        // Shadow disc
+        var disc = new THREE.Mesh(
+            new THREE.CircleGeometry(0.4, 16),
+            new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.08, side: THREE.DoubleSide })
+        );
+        disc.rotation.x = -Math.PI / 2; disc.position.y = 0.01; g.add(disc);
+
+        // Label
+        var lc = document.createElement('canvas'); lc.width = 256; lc.height = 48;
+        var lt = new THREE.CanvasTexture(lc);
+        var ls = new THREE.Sprite(new THREE.SpriteMaterial({ map: lt, transparent: true }));
+        ls.scale.set(2.2, 0.45, 1); ls.position.y = 2.1; g.add(ls);
+
+        g.visible = false; scene.add(g);
+        return { g: g, mat: mat, pG: pG, mG: mG, vG: vG, cG: cG, bG: bG, disc: disc, lc: lc, lt: lt, ls: ls };
     }
 
-    // Pre-create pool of 20 person meshes
-    for (var i = 0; i < 20; i++) personPool.push(createPersonMesh());
+    for (var i = 0; i < POOL_SIZE; i++) pool.push(createDet());
 
-    // Track previous positions for direction
-    var prevPositions = {};
+    // ── Smooth position tracking ──────────────────────────
+    var curPos = {}, prevPos = {};
 
-    // Update 3D scene from detections
     function updateScene(detections) {
-        // Hide all
-        personPool.forEach(function(p) { p.group.visible = false; });
+        pool.forEach(function(d) { d.g.visible = false; });
+        var di = 0;
 
-        var pi = 0;
         detections.forEach(function(det) {
-            if (det.label !== 'person') return;
-            if (activeDetections['person'] === false) return;
-            if (pi >= personPool.length) return;
+            if (activeDetections[det.label] === false) return;
+            if (di >= pool.length) return;
 
             var xm = det.x_m || (det.spatial ? det.spatial.x : 0) || 0;
             var zm = det.z_m || (det.spatial ? det.spatial.z : 0) || 0;
-            var tid = det.track_id || pi;
+            var tid = det.track_id || ('u' + di);
+            var dist = det.distance_m || Math.sqrt(xm * xm + zm * zm);
 
-            var p = personPool[pi++];
-            p.group.visible = true;
+            var d = pool[di++];
+            d.g.visible = true;
 
-            // Map to Three.js: x=right, z=-forward
             var tx = xm, tz = -zm;
-            p.group.position.set(tx, 0, tz);
 
-            // Rotate person to face direction of movement
-            var prev = prevPositions[tid];
-            if (prev) {
-                var dx = tx - prev.x;
-                var dz = tz - prev.z;
-                if (dx * dx + dz * dz > 0.01) {
-                    var angle = Math.atan2(dx, dz);
-                    p.group.rotation.y = angle;
+            // Smooth interpolation
+            if (!curPos[tid]) curPos[tid] = { x: tx, z: tz };
+            curPos[tid].x += (tx - curPos[tid].x) * 0.25;
+            curPos[tid].z += (tz - curPos[tid].z) * 0.25;
+            d.g.position.set(curPos[tid].x, 0, curPos[tid].z);
+
+            // Face direction of movement
+            var p = prevPos[tid];
+            if (p) {
+                var dx = curPos[tid].x - p.x, dz = curPos[tid].z - p.z;
+                if (dx * dx + dz * dz > 0.004) {
+                    d.g.rotation.y += (Math.atan2(dx, dz) - d.g.rotation.y) * 0.15;
                 }
             }
-            prevPositions[tid] = { x: tx, z: tz };
+            prevPos[tid] = { x: curPos[tid].x, z: curPos[tid].z };
 
-            p.mat.color.setHex(PERSON_COLOR);
+            // Show appropriate shape
+            var sh = SHAPES[det.label] || { type: 'person', s: 1.0 };
+            d.pG.visible = sh.type === 'person';
+            d.mG.visible = sh.type === 'machine';
+            d.vG.visible = sh.type === 'vehicle';
+            d.cG.visible = sh.type === 'cone';
+            d.bG.visible = sh.type === 'barrier';
+
+            var active = d.pG.visible ? d.pG : d.mG.visible ? d.mG : d.vG.visible ? d.vG : d.cG.visible ? d.cG : d.bG;
+            if (active) active.scale.set(sh.s, sh.s, sh.s);
+
+            d.mat.color.setHex(OBJ_COLOR);
+            d.disc.scale.set(sh.s, sh.s, sh.s);
+
+            // Label
+            var ctx = d.lc.getContext('2d');
+            ctx.clearRect(0, 0, 256, 48);
+            ctx.shadowColor = 'rgba(0,0,0,0.12)'; ctx.shadowBlur = 3; ctx.shadowOffsetY = 1;
+            ctx.fillStyle = 'rgba(255,255,255,0.9)';
+            ctx.beginPath(); ctx.roundRect(20, 8, 216, 32, 16); ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.font = '500 14px -apple-system, system-ui, sans-serif';
+            ctx.textAlign = 'center'; ctx.fillStyle = '#444';
+            ctx.fillText(det.label.replace(/-/g, ' ') + '  ' + dist.toFixed(1) + 'm', 128, 29);
+            d.lt.needsUpdate = true;
+            d.ls.position.y = sh.type === 'person' ? 2.1 : sh.type === 'machine' ? 1.6 * sh.s : sh.type === 'cone' ? 0.8 : 1.3;
         });
     }
 
-    // Resize
+    // ── Resize ────────────────────────────────────────────
     function onResize() {
         var w = container.clientWidth, h = container.clientHeight;
         if (w < 10 || h < 10) return;

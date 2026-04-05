@@ -161,6 +161,9 @@ class OakDriver:
         self._jpeg: bytes | None = None  # Pre-encoded JPEG for low-latency serving
         self._encoded_rgb: bool = False  # True when using on-device MJPEG encoder
 
+        # IMU orientation (rotation vector as quaternion + euler)
+        self._imu_rotation: dict | None = None  # {qx, qy, qz, qw, pitch, roll, yaw}
+
         # Health metrics
         self._fps: float = 0.0
         self._latency_ms: float = 0.0
@@ -223,6 +226,11 @@ class OakDriver:
         """Return pre-encoded JPEG bytes of the latest frame, or None."""
         with self._lock:
             return self._jpeg
+
+    def get_imu(self) -> dict | None:
+        """Return latest IMU orientation, or None if unavailable."""
+        with self._lock:
+            return self._imu_rotation
 
     def health(self) -> dict:
         """Return current health metrics."""
@@ -326,16 +334,12 @@ class OakDriver:
                 stereo.setLeftRightCheck(cfg.lr_check)
                 stereo.setSubpixel(cfg.subpixel)
 
-                # Depth post-processing filters for clean output
+                # Depth post-processing: minimal filters for speed
                 stereo.initialConfig.postProcessing.thresholdFilter.minRange = int(cfg.min_depth_m * 1000)
                 stereo.initialConfig.postProcessing.thresholdFilter.maxRange = int(cfg.max_depth_m * 1000)
-                stereo.initialConfig.postProcessing.speckleFilter.enable = True
-                stereo.initialConfig.postProcessing.speckleFilter.speckleRange = 50
-                stereo.initialConfig.postProcessing.temporalFilter.enable = True
-                stereo.initialConfig.postProcessing.temporalFilter.alpha = 0.4
-                stereo.initialConfig.postProcessing.spatialFilter.enable = True
-                stereo.initialConfig.postProcessing.spatialFilter.alpha = 0.5
-                stereo.initialConfig.postProcessing.spatialFilter.holeFillingRadius = 2
+                stereo.initialConfig.postProcessing.speckleFilter.enable = False
+                stereo.initialConfig.postProcessing.temporalFilter.enable = False
+                stereo.initialConfig.postProcessing.spatialFilter.enable = False
                 stereo.initialConfig.postProcessing.decimationFilter.decimationFactor = 2
 
                 self._q_depth = stereo.depth.createOutputQueue()
@@ -390,11 +394,23 @@ class OakDriver:
             encoder.build(
                 rgb_out,
                 profile=dai.VideoEncoderProperties.Profile.MJPEG,
-                quality=80,
+                quality=60,
                 frameRate=cfg.fps,
             )
             self._q_rgb = encoder.bitstream.createOutputQueue()
             self._encoded_rgb = True  # Flag: frames arrive as JPEG
+
+            # ── IMU — rotation vector for camera orientation ────
+            self._q_imu = None
+            try:
+                imu = p.create(dai.node.IMU)
+                imu.enableIMUSensor(dai.IMUSensor.ROTATION_VECTOR, 100)
+                imu.setBatchReportThreshold(1)
+                imu.setMaxBatchReports(1)
+                self._q_imu = imu.out.createOutputQueue()
+                logger.info("IMU enabled (rotation vector @ 100 Hz)")
+            except Exception:
+                logger.warning("IMU not available on this device — orientation disabled")
 
             # ── Start ────────────────────────────────────────────
             p.start()
@@ -509,11 +525,38 @@ class OakDriver:
                                     )
                                 )
 
+                    # ── Read IMU rotation ───────────────────────
+                    imu_data = None
+                    if self._q_imu is not None:
+                        imu_packet = self._q_imu.tryGet()
+                        if imu_packet is not None:
+                            for imu_report in imu_packet.packets:
+                                rv = imu_report.rotationVector
+                                qx, qy, qz, qw = rv.i, rv.j, rv.k, rv.real
+                                # Quaternion to euler (pitch/roll/yaw)
+                                sinr = 2.0 * (qw * qx + qy * qz)
+                                cosr = 1.0 - 2.0 * (qx * qx + qy * qy)
+                                roll = math.atan2(sinr, cosr)
+                                sinp = 2.0 * (qw * qy - qz * qx)
+                                pitch = math.asin(max(-1.0, min(1.0, sinp)))
+                                siny = 2.0 * (qw * qz + qx * qy)
+                                cosy = 1.0 - 2.0 * (qy * qy + qz * qz)
+                                yaw = math.atan2(siny, cosy)
+                                imu_data = {
+                                    "qx": round(qx, 4), "qy": round(qy, 4),
+                                    "qz": round(qz, 4), "qw": round(qw, 4),
+                                    "pitch": round(pitch, 4),
+                                    "roll": round(roll, 4),
+                                    "yaw": round(yaw, 4),
+                                }
+
                     with self._lock:
                         self._rgb = rgb_frame
                         self._depth = depth_frame
                         self._detections = detections
                         self._jpeg = jpeg_bytes
+                        if imu_data is not None:
+                            self._imu_rotation = imu_data
                         self._last_frame_time = time.time()
                         self._frame_count += 1
 

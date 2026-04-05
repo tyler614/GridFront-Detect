@@ -16,11 +16,11 @@ class OakConfig:
     resolution_rgb: str = "800p"         # 800p (OV9782 native) | 720p | 480p | 400p
     fps: int = 30
     enable_depth: bool = True            # Stereo depth for 3D spatial awareness
-    depth_preset: str = "HIGH_ACCURACY" # HIGH_ACCURACY | HIGH_DENSITY | DEFAULT
+    depth_preset: str = "HIGH_DENSITY"  # HIGH_DENSITY for speed, HIGH_ACCURACY for range
     extended_disparity: bool = True
-    subpixel: bool = True
+    subpixel: bool = False               # Disabled — saves VPU cycles, not needed for zone distances
     lr_check: bool = True
-    nn_model_id: str = "yolov10n-coco"  # Model ID from model_registry
+    nn_model_id: str = "yolov6n-coco"   # Model ID from model_registry (~64 FPS on Myriad X)
     nn_shaves: int = 6                  # Neural compute shaves to allocate
     enable_nn: bool = True              # Enable on-device neural network inference
     confidence_threshold: float = 0.5

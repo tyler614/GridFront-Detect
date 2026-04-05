@@ -231,7 +231,7 @@ class PipelineRunner:
 
     def _run_loop(self) -> None:
         """Main loop: grab frames, detect, track, fuse, classify, push state."""
-        target_interval = 0.1  # 10 Hz
+        target_interval = 1.0 / 30  # 30 Hz — match camera FPS
 
         while self._running:
             t0 = time.time()

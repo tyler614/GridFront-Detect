@@ -115,7 +115,7 @@ def spatial_stream():
             if state["timestamp"] and state["timestamp"] != last_ts:
                 last_ts = state["timestamp"]
                 yield f"data: {json.dumps(state)}\n\n"
-            time.sleep(0.1)  # 10Hz max
+            time.sleep(1.0 / 30)  # 30Hz max — match pipeline rate
     return Response(generate(), mimetype="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
@@ -324,6 +324,19 @@ def pipeline_status():
     return jsonify({**_pipeline_runner.stats, "mode": "live"})
 
 
+@app.route("/api/imu")
+def get_imu():
+    """Get camera IMU orientation (pitch, roll, yaw + quaternion)."""
+    if _pipeline_runner is None:
+        return jsonify({"error": "No pipeline running"}), 503
+    for cam_id, driver in _pipeline_runner._drivers.items():
+        if not driver.mock:
+            imu = driver.get_imu()
+            if imu:
+                return jsonify(imu)
+    return jsonify({"error": "IMU not available"}), 204
+
+
 @app.route("/api/ir", methods=["GET"])
 def get_ir_status():
     """Get IR illumination status."""
@@ -456,9 +469,9 @@ def camera_pointcloud():
     fx = fy = diag / (2 * np.tan(np.radians(75)))  # 75° = 150°/2
     cx_cam, cy_cam = w / 2.0, h / 2.0
 
-    # Downsample — target ~40000 points for dense screen coverage
+    # Downsample for live streaming
     total_pixels = h * w
-    target_points = 40000
+    target_points = int(request.args.get('points', 50000))
     step = max(1, int(np.sqrt(total_pixels / target_points)))
 
     # Build coordinate grids for downsampled pixels
@@ -483,7 +496,20 @@ def camera_pointcloud():
 
     # Stack and round for compact JSON
     points = np.stack([x_3d, y_3d, z_3d], axis=1)
-    points = np.round(points, 3).tolist()
+    # Hard cap to target_points for performance
+    if len(points) > target_points:
+        idx = np.random.choice(len(points), target_points, replace=False)
+        points = points[idx]
+    # Binary format: return raw Float32Array (x,y,z triples) — ~360KB vs ~627KB JSON
+    if request.args.get('format') == 'binary':
+        points = np.round(points, 2).astype(np.float32)
+        return Response(
+            points.tobytes(),
+            mimetype="application/octet-stream",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    points = np.round(points, 2).tolist()
 
     # Detections with 3D positions
     det_list = []
@@ -496,6 +522,118 @@ def camera_pointcloud():
     return Response(
         json.dumps(result),
         mimetype="application/json",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.route("/api/camera/mesh")
+def camera_mesh():
+    """Return a triangle mesh built from the depth map as binary.
+
+    The depth image is a grid — we connect neighboring pixels into triangles,
+    skipping edges where depth changes drastically (object boundaries).
+
+    Returns binary: [vertices (float32 x,y,z triples)] + [indices (uint32 triangle triples)]
+    Header: first 8 bytes = vertex_count (uint32) + index_count (uint32)
+    """
+    import struct
+
+    driver = None
+    if _pipeline_runner is not None:
+        for cam_id, d in _pipeline_runner._drivers.items():
+            if not d.mock:
+                driver = d
+                break
+        if driver is None:
+            for cam_id, d in _pipeline_runner._drivers.items():
+                driver = d
+                break
+
+    if driver is None:
+        return Response(struct.pack('<II', 0, 0), mimetype="application/octet-stream")
+
+    frame = driver.get_frame()
+    if frame is None or frame.get("depth") is None:
+        return Response(struct.pack('<II', 0, 0), mimetype="application/octet-stream")
+
+    depth = frame["depth"]  # float32, metres, shape (H, W)
+    h, w = depth.shape
+
+    # Camera intrinsics — OAK-D Pro W 150° DFOV
+    diag = np.sqrt(w**2 + h**2)
+    fx = fy = diag / (2 * np.tan(np.radians(75)))
+    cx_cam, cy_cam = w / 2.0, h / 2.0
+
+    # Downsample grid — higher res = smoother mesh
+    target_rows = int(request.args.get('rows', 160))
+    target_cols = int(request.args.get('cols', 240))
+    step_r = max(1, h // target_rows)
+    step_c = max(1, w // target_cols)
+
+    rows = np.arange(0, h, step_r)
+    cols = np.arange(0, w, step_c)
+    nr, nc = len(rows), len(cols)
+
+    # Sample depth at grid points
+    grid_v, grid_u = np.meshgrid(rows, cols, indexing='ij')  # (nr, nc)
+    grid_depth = depth[grid_v, grid_u]  # (nr, nc)
+
+    # Mark valid pixels
+    valid = (grid_depth > 0.3) & (grid_depth < 15.0)
+
+    # Project grid to 3D
+    grid_x = (grid_u.astype(np.float32) - cx_cam) * grid_depth / fx
+    grid_y = (grid_v.astype(np.float32) - cy_cam) * grid_depth / fy
+    grid_z = grid_depth
+
+    # Flatten to vertex array (nr*nc, 3)
+    vertices = np.stack([grid_x.ravel(), grid_y.ravel(), grid_z.ravel()], axis=1)
+    vertices = np.round(vertices, 2).astype(np.float32)
+
+    # Build triangle indices — connect each 2x2 quad into 2 triangles
+    # Skip triangles where any vertex is invalid or depth jump > threshold
+    depth_threshold = 0.15  # metres — tight threshold for clean object silhouettes
+
+    indices = []
+    for r in range(nr - 1):
+        for c in range(nc - 1):
+            # Four corners of the quad
+            i00 = r * nc + c
+            i01 = r * nc + c + 1
+            i10 = (r + 1) * nc + c
+            i11 = (r + 1) * nc + c + 1
+
+            # Check all four are valid
+            if not (valid[r, c] and valid[r, c+1] and valid[r+1, c] and valid[r+1, c+1]):
+                continue
+
+            # Check depth continuity — skip object edges
+            d00 = grid_depth[r, c]
+            d01 = grid_depth[r, c+1]
+            d10 = grid_depth[r+1, c]
+            d11 = grid_depth[r+1, c+1]
+
+            if (abs(d00 - d01) > depth_threshold or
+                abs(d00 - d10) > depth_threshold or
+                abs(d01 - d11) > depth_threshold or
+                abs(d10 - d11) > depth_threshold):
+                continue
+
+            # Two triangles per quad
+            indices.extend([i00, i10, i01])  # lower-left triangle
+            indices.extend([i01, i10, i11])  # upper-right triangle
+
+    indices = np.array(indices, dtype=np.uint32)
+    num_verts = len(vertices)
+    num_indices = len(indices)
+
+    # Pack: header (8 bytes) + vertices + indices
+    header = struct.pack('<II', num_verts, num_indices)
+    body = header + vertices.tobytes() + indices.tobytes()
+
+    return Response(
+        body,
+        mimetype="application/octet-stream",
         headers={"Cache-Control": "no-store"},
     )
 
@@ -556,7 +694,7 @@ if __name__ == "__main__":
             print("  No cameras found — pipeline will retry on connect.")
 
     from pipeline.pipeline_runner import PipelineRunner
-    active_model = config.get("active_model", "yolov10n-coco")
+    active_model = config.get("active_model", "yolov6n-coco")
     print(f"  Active model: {active_model}")
     _pipeline_runner = PipelineRunner(
         machine_type=machine_type,
