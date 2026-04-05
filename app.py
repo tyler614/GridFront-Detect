@@ -5,24 +5,31 @@ Connects to the camera detection pipeline and relays to GridFront platform.
 """
 
 from flask import Flask, jsonify, render_template, request, send_from_directory, Response
-import threading
+import argparse
+import logging
 import time
 import json
-import math
-import random
 import os
+import numpy as np
 
 from detection_state import (
-    update_state, get_state, get_camera_status, get_all_camera_health,
-    register_camera, update_camera_health, get_uptime,
+    get_state, get_camera_status, get_all_camera_health, get_uptime,
 )
 from machine_profiles import get_machine_profile, get_all_profiles, get_detection_classes
+from pipeline.model_registry import list_models, get_model, MODELS
+
+logger = logging.getLogger(__name__)
 
 app = Flask(
     __name__,
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
     static_folder=os.path.join(os.path.dirname(__file__), "static"),
 )
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
+
+# Global reference to the live pipeline (set in main when --live is used)
+_pipeline_runner = None
 
 # ── Camera configuration (persisted to config.json) ──────────
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
@@ -58,6 +65,11 @@ def save_config(config):
 
 @app.route("/")
 def index():
+    return render_template("detect.html")
+
+
+@app.route("/radar")
+def radar_page():
     return render_template("radar.html")
 
 
@@ -238,6 +250,33 @@ def update_detection_config():
     return jsonify({"status": "ok", "detection_config": config["detection_config"]})
 
 
+# ── Model API ───────────────────────────────────────────────
+
+@app.route("/api/models", methods=["GET"])
+def get_models():
+    """List all available detection models with their classes."""
+    config = load_config()
+    active_id = config.get("active_model", "yolov10n-coco")
+    models = list_models()
+    for m in models:
+        m["active"] = m["id"] == active_id
+    return jsonify({"models": models, "active_model": active_id})
+
+
+@app.route("/api/models/active", methods=["POST"])
+def set_active_model():
+    """Switch the active detection model. Requires pipeline restart."""
+    data = request.json
+    model_id = data.get("model_id") if data else None
+    if not model_id or model_id not in MODELS:
+        return jsonify({"error": f"Unknown model: {model_id}"}), 400
+    config = load_config()
+    config["active_model"] = model_id
+    save_config(config)
+    # Pipeline restart would happen here in production
+    return jsonify({"status": "ok", "active_model": model_id, "restart_required": True})
+
+
 # ── System Health API ────────────────────────────────────────
 
 @app.route("/api/system/health")
@@ -250,62 +289,282 @@ def system_health():
     total_cameras = len(config.get("cameras", []))
     connected_cameras = sum(1 for h in all_health.values() if h.get("connected"))
 
-    return jsonify({
+    result = {
         "status": "ok",
         "active_machine": config.get("machine_type", "wheel_loader"),
         "cameras": {"total": total_cameras, "connected": connected_cameras},
         "detection": {"active": state["timestamp"] is not None, "fps": state["fps"]},
         "uptime_s": round(get_uptime(), 1),
-    })
+    }
+
+    # Include pipeline stats when running in live mode
+    if _pipeline_runner is not None:
+        result["pipeline"] = _pipeline_runner.stats
+
+    return jsonify(result)
 
 
-# ── Demo mode ─────────────────────────────────────────────────
+# ── Camera Discovery API ────────────────────────────────────
 
-def run_demo_data():
-    """Generate simulated detection data for testing."""
-    # Register demo cameras
-    for cam_id in ["cam-0", "cam-1"]:
-        register_camera(cam_id)
+@app.route("/api/cameras/discover")
+def discover_cameras():
+    """Scan the network for OAK-D cameras."""
+    from pipeline.oak_driver import OakDriver
+    devices = OakDriver.discover()
+    return jsonify({"devices": devices, "count": len(devices)})
 
-    angle = 0
-    while True:
-        angle += 0.05
-        distance = 3.5 + 2.0 * math.sin(angle * 0.3)
-        x = distance * math.sin(angle)
-        z = distance * math.cos(angle)
-        zone = "DANGER" if distance < 3 else ("WARNING" if distance < 7 else "CLEAR")
 
-        dets = [{
-            "track_id": 1, "label": "person", "confidence": 0.92,
-            "x_m": round(x, 2), "y_m": 0, "z_m": round(z, 2),
-            "distance_m": round(distance, 2),
-            "bearing_deg": round(math.degrees(math.atan2(x, z)), 1),
-            "zone": zone, "camera_id": "cam-0",
-        }]
+# ── Pipeline Control API ────────────────────────────────────
 
-        # Update demo camera health
-        update_camera_health("cam-0", fps=15.0, latency_ms=12.5)
+@app.route("/api/pipeline/status")
+def pipeline_status():
+    """Get the current pipeline status."""
+    if _pipeline_runner is None:
+        return jsonify({"running": False, "mode": "demo"})
+    return jsonify({**_pipeline_runner.stats, "mode": "live"})
 
-        if random.random() > 0.7:
-            d2 = random.uniform(2, 8)
-            a2 = random.uniform(0, math.pi * 2)
-            z2 = "DANGER" if d2 < 3 else ("WARNING" if d2 < 7 else "CLEAR")
-            dets.append({
-                "track_id": 2, "label": "person", "confidence": 0.78,
-                "x_m": round(d2 * math.sin(a2), 2), "y_m": 0,
-                "z_m": round(d2 * math.cos(a2), 2),
-                "distance_m": round(d2, 2),
-                "bearing_deg": round(math.degrees(a2), 1),
-                "zone": z2, "camera_id": "cam-1",
-            })
-            update_camera_health("cam-1", fps=14.8, latency_ms=13.1)
 
-        update_state(dets, fps=15.0)
-        time.sleep(0.1)
+@app.route("/api/ir", methods=["GET"])
+def get_ir_status():
+    """Get IR illumination status."""
+    if _pipeline_runner is None:
+        return jsonify({"error": "No pipeline running"}), 503
+    result = {}
+    for cam_id, driver in _pipeline_runner._drivers.items():
+        if not driver.mock and driver._device is not None:
+            result[cam_id] = {
+                "ir_active": driver._ir_active,
+                "ir_auto": driver.config.ir_auto,
+                "ir_flood": driver.config.ir_flood_intensity,
+                "ir_dot": driver.config.ir_dot_intensity,
+            }
+    return jsonify(result)
+
+
+@app.route("/api/ir", methods=["POST"])
+def set_ir():
+    """Control IR illumination. Body: {flood: 0-1, dot: 0-1, auto: bool}"""
+    data = request.json
+    if _pipeline_runner is None:
+        return jsonify({"error": "No pipeline running"}), 503
+    for cam_id, driver in _pipeline_runner._drivers.items():
+        if not driver.mock and driver._device is not None:
+            if "flood" in data:
+                val = float(data["flood"])
+                driver._device.setIrFloodLightIntensity(val)
+                driver.config.ir_flood_intensity = val
+            if "dot" in data:
+                val = float(data["dot"])
+                driver._device.setIrLaserDotProjectorIntensity(val)
+                driver.config.ir_dot_intensity = val
+            if "auto" in data:
+                driver.config.ir_auto = bool(data["auto"])
+    return jsonify({"status": "ok"})
+
+
+# ── Camera Video Feed (MJPEG) ─────────────────────────────────
+
+@app.route("/api/camera/snapshot")
+def camera_snapshot():
+    """Return pre-encoded JPEG of the latest camera frame — near-zero server time."""
+    if _pipeline_runner is not None:
+        # Prefer real camera
+        for cam_id, driver in _pipeline_runner._drivers.items():
+            if not driver.mock:
+                jpeg = driver.get_jpeg()
+                if jpeg:
+                    return Response(jpeg, mimetype='image/jpeg',
+                                    headers={"Cache-Control": "no-store"})
+        # Fall back to any driver
+        for cam_id, driver in _pipeline_runner._drivers.items():
+            jpeg = driver.get_jpeg()
+            if jpeg:
+                return Response(jpeg, mimetype='image/jpeg',
+                                headers={"Cache-Control": "no-store"})
+
+    # No frame available
+    return Response(b'', status=204)
+
+
+@app.route("/api/camera/depthimage")
+def camera_depthimage():
+    """Return depth map as a grayscale JPEG — pixel-perfect alignment with camera feed."""
+    import cv2
+    driver = None
+    if _pipeline_runner is not None:
+        for cam_id, d in _pipeline_runner._drivers.items():
+            if not d.mock:
+                driver = d
+                break
+        if driver is None:
+            for cam_id, d in _pipeline_runner._drivers.items():
+                driver = d
+                break
+
+    if driver is None:
+        return Response(b'', status=204)
+
+    frame = driver.get_frame()
+    if frame is None or frame.get("depth") is None:
+        return Response(b'', status=204)
+
+    depth = frame["depth"]  # float32, metres
+    # Normalize: 0.3m=white(255), 15m=dark(40), invalid=black(0)
+    valid = depth > 0.3
+    img = np.zeros(depth.shape, dtype=np.uint8)
+    d_clamped = np.clip(depth[valid], 0.3, 15.0)
+    # Invert: near=bright, far=dim
+    img[valid] = (255 - ((d_clamped - 0.3) / 14.7 * 215)).astype(np.uint8)
+
+    _, jpeg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    return Response(
+        jpeg.tobytes(),
+        mimetype="image/jpeg",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.route("/api/camera/pointcloud")
+def camera_pointcloud():
+    """Return a downsampled 3D point cloud from the depth map plus detections."""
+    driver = None
+    if _pipeline_runner is not None:
+        # Prefer non-mock driver
+        for cam_id, d in _pipeline_runner._drivers.items():
+            if not d.mock:
+                driver = d
+                break
+        # Fall back to any driver
+        if driver is None:
+            for cam_id, d in _pipeline_runner._drivers.items():
+                driver = d
+                break
+
+    if driver is None:
+        return jsonify({"points": [], "detections": [], "timestamp": 0})
+
+    frame = driver.get_frame()
+    if frame is None or frame.get("depth") is None:
+        return jsonify({"points": [], "detections": [], "timestamp": 0})
+
+    depth = frame["depth"]  # float32, metres, shape (H, W)
+    h, w = depth.shape
+
+    # Pinhole intrinsics for OAK-D Pro W (150° DFOV wide lens)
+    # f = diagonal_pixels / (2 * tan(DFOV/2))
+    diag = np.sqrt(w**2 + h**2)
+    fx = fy = diag / (2 * np.tan(np.radians(75)))  # 75° = 150°/2
+    cx_cam, cy_cam = w / 2.0, h / 2.0
+
+    # Downsample — target ~40000 points for dense screen coverage
+    total_pixels = h * w
+    target_points = 40000
+    step = max(1, int(np.sqrt(total_pixels / target_points)))
+
+    # Build coordinate grids for downsampled pixels
+    vs = np.arange(0, h, step)
+    us = np.arange(0, w, step)
+    uu, vv = np.meshgrid(us, vs)
+    uu = uu.ravel()
+    vv = vv.ravel()
+
+    d_vals = depth[vv, uu]
+
+    # Filter out invalid depths (zero, too close, too far)
+    valid = (d_vals > 0.3) & (d_vals < 15.0)
+    uu = uu[valid]
+    vv = vv[valid]
+    d_vals = d_vals[valid]
+
+    # Project to 3D: x=right, y=down, z=forward
+    x_3d = (uu.astype(np.float32) - cx_cam) * d_vals / fx
+    y_3d = (vv.astype(np.float32) - cy_cam) * d_vals / fy
+    z_3d = d_vals
+
+    # Stack and round for compact JSON
+    points = np.stack([x_3d, y_3d, z_3d], axis=1)
+    points = np.round(points, 3).tolist()
+
+    # Detections with 3D positions
+    det_list = []
+    for det in frame.get("detections", []):
+        d = det.to_dict() if hasattr(det, "to_dict") else det
+        det_list.append(d)
+
+    result = {"points": points, "detections": det_list, "timestamp": frame.get("timestamp", 0)}
+
+    return Response(
+        json.dumps(result),
+        mimetype="application/json",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 if __name__ == "__main__":
-    print("[GridFront Safety Display] Starting in DEMO mode")
-    demo = threading.Thread(target=run_demo_data, daemon=True)
-    demo.start()
-    app.run(host="0.0.0.0", port=5555, debug=False)
+    parser = argparse.ArgumentParser(description="GridFront Safety Display Server")
+    parser.add_argument(
+        "--machine", type=str, default=None,
+        help="Machine type (e.g. wheel_loader, excavator). Overrides config.json.",
+    )
+    parser.add_argument(
+        "--port", type=int, default=5555,
+        help="Server port (default: 5555)",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    )
+
+    config = load_config()
+    machine_type = args.machine or config.get("machine_type", "wheel_loader")
+
+    print(f"[GridFront Detect] Starting — machine: {machine_type}")
+
+    # Discover cameras on the network
+    from pipeline.oak_driver import OakDriver
+    devices = OakDriver.discover()
+
+    # Build device_ids mapping: cam-{mount_id} -> IP or MX ID
+    # First try broadcast discovery, then fall back to config IPs
+    device_ids = {}
+    if devices:
+        print(f"  Found {len(devices)} OAK-D camera(s) via broadcast:")
+        for d in devices:
+            print(f"    {d['name']} ({d['mx_id']}) — {d['state']}")
+        from machine_profiles import get_machine_profile as _gmp
+        profile = _gmp(machine_type)
+        mounts = profile["camera_mounts"] if profile else []
+        for i, d in enumerate(devices):
+            if i < len(mounts):
+                cam_id = f"cam-{mounts[i]['id']}"
+                device_ids[cam_id] = d["name"]
+                print(f"    -> Assigned to {cam_id} ({mounts[i]['label']})")
+    if not device_ids:
+        # PoE broadcast discovery is unreliable; check config for known IPs
+        cam_configs = config.get("cameras", [])
+        poe_entries = [(c.get("mount", f"{i}"), c["ip"])
+                       for i, c in enumerate(cam_configs) if c.get("ip")]
+        if poe_entries:
+            print(f"  Using {len(poe_entries)} camera IP(s) from config.json:")
+            for mount_id, ip in poe_entries:
+                cam_id = f"cam-{mount_id}"
+                device_ids[cam_id] = ip
+                print(f"    {cam_id} -> {ip}")
+        else:
+            print("  No cameras found — pipeline will retry on connect.")
+
+    from pipeline.pipeline_runner import PipelineRunner
+    active_model = config.get("active_model", "yolov10n-coco")
+    print(f"  Active model: {active_model}")
+    _pipeline_runner = PipelineRunner(
+        machine_type=machine_type,
+        mock=False,
+        zone_override=config.get("zones"),
+        device_ids=device_ids,
+        active_model_id=active_model,
+    )
+    _pipeline_runner.start()
+
+    app.run(host="0.0.0.0", port=args.port, debug=False, threaded=True)

@@ -58,6 +58,9 @@ class PipelineRunner:
         machine_type: str = "wheel_loader",
         mock: bool = True,
         zone_override: Optional[Dict[str, float]] = None,
+        device_ids: Optional[Dict[str, str]] = None,
+        active_model_id: Optional[str] = None,
+        **kwargs,
     ):
         """Initialise the full pipeline.
 
@@ -65,6 +68,9 @@ class PipelineRunner:
             machine_type: key into ``machine_profiles.MACHINE_PROFILES``
             mock: if True, use synthetic camera data (no hardware required)
             zone_override: optional zone config to override the profile defaults
+            device_ids: optional mapping of ``cam-{mount_id}`` to device IP or
+                MX ID.  When only one camera is available, pass a single entry
+                and it will be assigned to the first mount.
         """
         (
             OakDriver, OakConfig, Detector, Detection,
@@ -106,10 +112,33 @@ class PipelineRunner:
         self._detectors: Dict[str, Any] = {}
         self._trackers: Dict[str, Any] = {}
 
+        # Resolve device IDs — if only one camera is provided, assign it
+        # to the first mount so a single OAK-D PoE can still drive the
+        # pipeline without needing a full multi-camera rig.
+        _device_ids = device_ids or {}
+        if len(_device_ids) == 1 and len(mounts) > 1:
+            only_id = list(_device_ids.values())[0]
+            first_cam_id = f"cam-{mounts[0]['id']}"
+            if first_cam_id not in _device_ids:
+                _device_ids = {first_cam_id: only_id}
+
+        # Resolve active model from config
+        self._active_model_id = active_model_id or OakConfig().nn_model_id
+
         for mount in mounts:
             cam_id = f"cam-{mount['id']}"
-            config = OakConfig()
-            self._drivers[cam_id] = OakDriver(config, mock=mock)
+            dev_id = _device_ids.get(cam_id)
+            config = OakConfig(nn_model_id=self._active_model_id)
+            if mock:
+                # Full mock mode — create mock drivers for all mounts
+                is_mock = True
+            elif dev_id:
+                # Live mode with assigned hardware
+                is_mock = False
+            else:
+                # Live mode but no hardware — skip this mount entirely
+                continue
+            self._drivers[cam_id] = OakDriver(config, mock=is_mock, device_id=dev_id)
             self._detectors[cam_id] = Detector()
             self._trackers[cam_id] = Tracker()
 
@@ -238,7 +267,14 @@ class PipelineRunner:
     # ------------------------------------------------------------------
 
     def _live_cycle(self) -> List[dict]:
-        """Run one cycle using real camera data."""
+        """Run one cycle using real camera data.
+
+        Handles a mixed fleet: some drivers connect to real hardware, others
+        run in mock mode (when fewer physical cameras are available than the
+        machine profile defines).  Mock drivers produce pre-labelled
+        Detection objects that should NOT be re-processed through the
+        Detector (which expects raw NN integer label IDs).
+        """
         camera_dets: Dict[str, list] = {}
 
         for cam_id, driver in self._drivers.items():
@@ -246,16 +282,25 @@ class PipelineRunner:
             if frame is None:
                 continue  # Camera disconnected or not yet ready
 
-            detector = self._detectors[cam_id]
-            tracker = self._trackers[cam_id]
+            from .detector import Detection as Det
+            dets: list = []
 
-            # Detect objects in the frame
-            detections = detector.process_frame(
-                frame["rgb"], frame["depth"], frame["detections"]
-            )
+            for raw in frame["detections"]:
+                d = raw.to_dict() if hasattr(raw, "to_dict") else raw
+                # oak_driver.Detection stores spatial as {x, y, z} in metres
+                spatial = d.get("spatial", {})
+                dets.append(Det(
+                    track_id=0,
+                    label=d.get("label", "person"),
+                    confidence=d.get("confidence", 0.8),
+                    bbox=d.get("bbox", (0, 0, 1, 1)),
+                    x_m=spatial.get("x", d.get("x_m", 0)),
+                    y_m=spatial.get("y", d.get("y_m", 0)),
+                    z_m=spatial.get("z", d.get("z_m", 0)),
+                    distance_m=d.get("distance_m", 0),
+                ))
 
-            # Apply tracking for ID persistence
-            tracked = tracker.update(detections)
+            tracked = self._trackers[cam_id].update(dets)
             camera_dets[cam_id] = tracked
 
         # Fuse across cameras into machine-world coordinates

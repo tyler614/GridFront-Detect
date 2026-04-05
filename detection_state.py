@@ -68,7 +68,13 @@ def update_camera_health(camera_id, fps, latency_ms):
     """Update a camera's health metrics."""
     with _camera_lock:
         if camera_id not in _camera_health:
-            register_camera(camera_id)
+            _camera_health[camera_id] = {
+                "camera_id": camera_id,
+                "connected": False,
+                "fps": 0,
+                "latency_ms": 0,
+                "last_seen": None,
+            }
         _camera_health[camera_id].update({
             "connected": True,
             "fps": round(fps, 1),

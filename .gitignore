@@ -17,3 +17,26 @@ __pycache__/
 *.pyc
 .env
 venv/
+
+# Cache / local data
+.cache/
+.depthai_cached_models/
+.claude/
+
+# Config with potential secrets
+config.json
+
+# Screenshots (dev only)
+screenshot*.png
+test_frame.*
+test_live.*
+
+# Conversion scripts (dev only)
+convert_*.py
+freecad_to_stl.py
+
+# Model blobs (too large for git)
+models/*.blob
+
+# Temp
+fix_network.ps1

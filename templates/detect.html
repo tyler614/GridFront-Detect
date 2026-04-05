@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0A0A0A">
+<title>GridFront Detect</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+        height: 100%; overflow: hidden;
+        background: #0A0A0A; color: #F2F2F2;
+        font-family: -apple-system, system-ui, sans-serif;
+        -webkit-user-select: none; user-select: none;
+    }
+    .app {
+        display: flex; flex-direction: column;
+        height: 100vh; height: 100dvh;
+    }
+
+    /* ── Status bar ─────────────────────────────────── */
+    .status-bar {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 6px 12px;
+        background: #111; border-bottom: 1px solid #222;
+        flex-shrink: 0; min-height: 36px;
+    }
+    .status-left { display: flex; align-items: center; gap: 8px; }
+    .status-logo { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; }
+    .status-logo span { color: #555; font-weight: 400; }
+    .status-pill {
+        display: flex; align-items: center; gap: 5px;
+        padding: 2px 8px; border-radius: 99px;
+        font-size: 11px; font-weight: 600;
+    }
+    .pill-live { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .pill-danger { background: rgba(239,68,68,0.2); color: #f87171; animation: pulse 0.8s ease-in-out infinite alternate; }
+    .pill-warning { background: rgba(251,146,60,0.2); color: #fb923c; }
+    .pill-clear { background: rgba(34,197,94,0.1); color: #4ade80; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    @keyframes pulse { from { opacity: 1; } to { opacity: 0.4; } }
+
+    .status-right { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #777; }
+    .stat { display: flex; align-items: center; gap: 4px; }
+    .stat b { color: #ccc; font-weight: 600; }
+    .btn-icon {
+        background: none; border: none; cursor: pointer;
+        color: #666; padding: 4px; display: flex; align-items: center;
+        transition: color 0.15s;
+    }
+    .btn-icon:hover { color: #ccc; }
+    .btn-icon svg { width: 18px; height: 18px; }
+
+    /* ── Panels ──────────────────────────────────────── */
+    .panels { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+
+    .camera-panel {
+        flex: 1 1 50%; position: relative;
+        background: #0a0a0a; overflow: hidden;
+        border-bottom: 1px solid #222;
+    }
+    .camera-panel img { width: 100%; height: 100%; object-fit: contain; }
+    .camera-panel canvas.debug-overlay {
+        position: absolute; top: 0; left: 0;
+        width: 100%; height: 100%;
+        pointer-events: none; z-index: 1;
+    }
+    .panel-label {
+        position: absolute; top: 8px; left: 10px;
+        font-size: 11px; font-weight: 600; color: #888;
+        background: rgba(0,0,0,0.6); padding: 2px 8px;
+        border-radius: 4px; letter-spacing: 0.5px; z-index: 2;
+    }
+
+    .scene-panel {
+        flex: 1 1 50%; position: relative;
+        background: #f0f0f0; overflow: hidden;
+    }
+    .scene-panel canvas { display: block; }
+
+    /* ── Settings overlay ───────────────────────────── */
+    .settings-overlay {
+        display: none; position: fixed; inset: 0;
+        background: rgba(0,0,0,0.85); z-index: 100;
+        overflow-y: auto; -webkit-overflow-scrolling: touch;
+    }
+    .settings-overlay.open { display: block; }
+    .settings-container {
+        max-width: 600px; margin: 0 auto;
+        padding: 20px 16px 40px;
+    }
+    .settings-header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 24px; padding-bottom: 12px;
+        border-bottom: 1px solid #333;
+    }
+    .settings-header h1 { font-size: 18px; font-weight: 600; }
+    .btn-close {
+        background: none; border: none; cursor: pointer;
+        color: #888; padding: 4px; display: flex; transition: color 0.15s;
+    }
+    .btn-close:hover { color: #fff; }
+    .btn-close svg { width: 22px; height: 22px; }
+    .settings-section { margin-bottom: 24px; }
+    .settings-section h2 {
+        font-size: 13px; font-weight: 600; color: #888;
+        text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;
+    }
+    .settings-section p { font-size: 12px; color: #666; margin-bottom: 12px; line-height: 1.4; }
+    .detection-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px;
+    }
+    .detection-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 10px 12px; background: #1a1a1a; border: 1px solid #2a2a2a;
+        border-radius: 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+    }
+    .detection-item:hover { background: #222; }
+    .detection-item.active { border-color: #4ade80; background: rgba(34,197,94,0.08); }
+    .detection-check {
+        width: 18px; height: 18px; border-radius: 4px; border: 2px solid #444; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center; transition: border-color 0.15s, background 0.15s;
+    }
+    .detection-item.active .detection-check { border-color: #4ade80; background: #4ade80; }
+    .detection-check svg { width: 12px; height: 12px; display: none; }
+    .detection-item.active .detection-check svg { display: block; }
+    .detection-info { flex: 1; min-width: 0; }
+    .detection-name { font-size: 13px; font-weight: 500; color: #eee; }
+    .detection-meta { font-size: 10px; color: #666; margin-top: 1px; }
+    .priority-high .detection-name { color: #f87171; }
+    .priority-medium .detection-name { color: #fb923c; }
+    .priority-low .detection-name { color: #888; }
+    .toggle-all {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 6px 14px; border-radius: 6px;
+        background: #1a1a1a; border: 1px solid #333;
+        color: #ccc; font-size: 12px; font-weight: 500;
+        cursor: pointer; transition: background 0.15s;
+    }
+    .toggle-all:hover { background: #252525; }
+
+    /* Model cards */
+    .model-card {
+        padding: 14px 16px; background: #1a1a1a; border: 2px solid #2a2a2a;
+        border-radius: 10px; cursor: pointer; margin-bottom: 10px;
+        transition: border-color 0.15s, background 0.15s;
+    }
+    .model-card:hover { background: #222; }
+    .model-card.active { border-color: #4ade80; background: rgba(34,197,94,0.06); }
+    .model-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .model-radio {
+        width: 18px; height: 18px; border-radius: 50%; border: 2px solid #444;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .model-card.active .model-radio { border-color: #4ade80; }
+    .model-radio-dot {
+        width: 10px; height: 10px; border-radius: 50%; background: #4ade80;
+        display: none;
+    }
+    .model-card.active .model-radio-dot { display: block; }
+    .model-name { font-size: 14px; font-weight: 600; color: #eee; }
+    .model-meta { font-size: 11px; color: #888; }
+    .model-desc { font-size: 12px; color: #777; margin-bottom: 8px; line-height: 1.4; }
+    .model-classes {
+        font-size: 11px; color: #666; line-height: 1.5;
+        max-height: 0; overflow: hidden; transition: max-height 0.3s;
+    }
+    .model-card.active .model-classes { max-height: 200px; }
+    .model-class-tag {
+        display: inline-block; padding: 1px 6px; margin: 2px;
+        background: #252525; border-radius: 4px; color: #999; font-size: 10px;
+    }
+    .model-restart-note {
+        font-size: 11px; color: #fb923c; margin-top: 6px; display: none;
+    }
+    .model-card.pending .model-restart-note { display: block; }
+
+    /* Category tabs + search */
+    .class-toolbar {
+        display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .class-search {
+        flex: 1; min-width: 120px; padding: 6px 10px;
+        background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
+        color: #ccc; font-size: 12px; outline: none;
+    }
+    .class-search:focus { border-color: #555; }
+    .class-search::placeholder { color: #555; }
+    .cat-tabs {
+        display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch; margin-bottom: 10px;
+    }
+    .cat-tab {
+        padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 500;
+        background: #1a1a1a; border: 1px solid #2a2a2a; color: #888;
+        cursor: pointer; white-space: nowrap; transition: all 0.15s;
+    }
+    .cat-tab:hover { background: #222; color: #ccc; }
+    .cat-tab.active { background: #333; border-color: #555; color: #eee; }
+</style>
+</head>
+<body>
+<div class="app">
+    <div class="status-bar">
+        <div class="status-left">
+            <div class="status-logo">GridFront <span>Detect</span></div>
+            <div class="status-pill pill-live" id="mode-pill">
+                <div class="status-dot"></div><span id="mode-text">LIVE</span>
+            </div>
+            <div class="status-pill pill-clear" id="zone-pill">
+                <span id="zone-text">CLEAR</span>
+            </div>
+        </div>
+        <div class="status-right">
+            <div class="stat"><span>FPS</span> <b id="hud-fps">0</b></div>
+            <div class="stat"><span>Nearest</span> <b id="hud-nearest">--</b></div>
+            <div class="stat"><span>Objects</span> <b id="hud-count">0</b></div>
+            <button class="btn-icon" onclick="toggleSettings()" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="panels">
+        <div class="camera-panel" id="camera-panel">
+            <div class="panel-label">CAMERA FEED</div>
+            <img id="camera-feed" alt="Camera feed">
+            <canvas class="debug-overlay" id="debug-canvas"></canvas>
+        </div>
+        <div class="scene-panel" id="scene-panel">
+            <div class="panel-label" style="color:#999; background:rgba(255,255,255,0.7);">SPATIAL VIEW</div>
+        </div>
+    </div>
+</div>
+
+<!-- Settings overlay -->
+<div class="settings-overlay" id="settings-overlay">
+    <div class="settings-container">
+        <div class="settings-header">
+            <h1>Settings</h1>
+            <button class="btn-close" onclick="toggleSettings()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        <div class="settings-section">
+            <h2>Debug Mode</h2>
+            <p>Show detection bounding boxes with confidence scores on the camera feed.</p>
+            <div class="detection-item" id="debug-toggle" onclick="toggleDebugMode()" style="max-width:200px;">
+                <div class="detection-check">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                </div>
+                <div class="detection-info">
+                    <div class="detection-name" style="color:#60a5fa;">Debug Overlay</div>
+                    <div class="detection-meta">Bounding boxes + confidence</div>
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <h2>Detection Models</h2>
+            <p>Select the active model. Each model runs on the camera's VPU — only one can be active at a time.</p>
+            <div id="model-list"></div>
+        </div>
+        <div class="settings-section">
+            <h2>Detection Classes</h2>
+            <p>Toggle which detected classes to show. Only classes from the active model appear here.</p>
+            <div id="detection-section"></div>
+        </div>
+        <div class="settings-section">
+            <h2>Camera</h2>
+            <div style="display:flex; gap:16px;">
+                <label style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:#999;">
+                    IR Mode
+                    <select id="set-ir-mode" style="padding:6px 8px; background:#1a1a1a; border:1px solid #333; border-radius:6px; color:#ccc; font-size:13px;">
+                        <option value="auto">Auto</option><option value="on">Always On</option><option value="off">Off</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/three.min.js"></script>
+<script>
+// ── Model & Detection Library ──────────────────────────────
+var availableModels = [];
+var activeModelId = '';
+var pendingModelId = '';
+var DETECTION_CLASSES = [];
+
+var activeDetections = {};
+try {
+    var saved = localStorage.getItem('gf_detections');
+    if (saved) activeDetections = JSON.parse(saved);
+} catch(e) {}
+
+function saveDetections() { localStorage.setItem('gf_detections', JSON.stringify(activeDetections)); }
+
+// Category + priority for known classes
+var CLASS_META = {
+    'person':'People|high','Person':'People|high',
+    'bicycle':'Vehicles|medium','car':'Vehicles|high','motorbike':'Vehicles|medium',
+    'bus':'Vehicles|high','train':'Vehicles|high','truck':'Vehicles|high','boat':'Vehicles|medium',
+    'aeroplane':'Vehicles|low',
+    'traffic light':'Street|medium','fire hydrant':'Street|medium','stop sign':'Street|medium',
+    'parking meter':'Street|low','bench':'Street|low',
+    'bird':'Animals|low','cat':'Animals|medium','dog':'Animals|medium','horse':'Animals|medium',
+    'sheep':'Animals|medium','cow':'Animals|medium','elephant':'Animals|medium','bear':'Animals|medium',
+    'zebra':'Animals|low','giraffe':'Animals|low',
+    'backpack':'Accessories|low','umbrella':'Accessories|low','handbag':'Accessories|low',
+    'tie':'Accessories|low','suitcase':'Accessories|low',
+    'frisbee':'Sports|low','skis':'Sports|low','snowboard':'Sports|low','sports ball':'Sports|low',
+    'kite':'Sports|low','baseball bat':'Sports|low','baseball glove':'Sports|low',
+    'skateboard':'Sports|low','surfboard':'Sports|low','tennis racket':'Sports|low',
+    'bottle':'Kitchen|low','wine glass':'Kitchen|low','cup':'Kitchen|low','fork':'Kitchen|low',
+    'knife':'Kitchen|low','spoon':'Kitchen|low','bowl':'Kitchen|low',
+    'banana':'Food|low','apple':'Food|low','sandwich':'Food|low','orange':'Food|low',
+    'broccoli':'Food|low','carrot':'Food|low','hot dog':'Food|low','pizza':'Food|low',
+    'donut':'Food|low','cake':'Food|low',
+    'chair':'Indoor|low','sofa':'Indoor|low','pottedplant':'Indoor|low','bed':'Indoor|low',
+    'diningtable':'Indoor|low','toilet':'Indoor|low',
+    'tvmonitor':'Electronics|low','laptop':'Electronics|low','mouse':'Electronics|low',
+    'remote':'Electronics|low','keyboard':'Electronics|low','cell phone':'Electronics|low',
+    'microwave':'Electronics|low','oven':'Electronics|low','toaster':'Electronics|low',
+    'sink':'Indoor|low','refrigerator':'Electronics|low',
+    'book':'Indoor|low','clock':'Indoor|low','vase':'Indoor|low','scissors':'Indoor|low',
+    'teddy bear':'Indoor|low','hair drier':'Indoor|low','toothbrush':'Indoor|low',
+    // PPE classes
+    'Hardhat':'Safety|high','Mask':'Safety|medium','NO-Hardhat':'Safety|high',
+    'NO-Mask':'Safety|medium','NO-Safety Vest':'Safety|high','Safety Cone':'Safety|medium',
+    'Safety Vest':'Safety|high','machinery':'Vehicles|high','vehicle':'Vehicles|high',
+};
+
+function classDisplayName(id) {
+    return id.split(' ').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+}
+
+function getClassCategory(id) { return (CLASS_META[id] || 'Other|low').split('|')[0]; }
+function getClassPriority(id) { return (CLASS_META[id] || 'Other|low').split('|')[1]; }
+
+function buildClassesFromModel(model) {
+    if (!model || !model.classes) return [];
+    return model.classes.map(function(cls, i) {
+        return { id: cls, name: classDisplayName(cls), priority: getClassPriority(cls), category: getClassCategory(cls), cocoId: i };
+    });
+}
+
+function loadModels() {
+    fetch('/api/models').then(function(r) { return r.json(); }).then(function(data) {
+        availableModels = data.models || [];
+        activeModelId = data.active_model || '';
+        var activeModel = availableModels.find(function(m) { return m.id === activeModelId; });
+        DETECTION_CLASSES = buildClassesFromModel(activeModel);
+        DETECTION_CLASSES.forEach(function(c) {
+            if (activeDetections[c.id] === undefined) activeDetections[c.id] = true;
+        });
+    }).catch(function() {});
+}
+loadModels();
+
+// ── Model list rendering ──────────────────────────────────
+function renderModelList() {
+    var container = document.getElementById('model-list');
+    if (!container) return;
+    container.innerHTML = '';
+    availableModels.forEach(function(model) {
+        var isActive = model.id === activeModelId;
+        var isPending = model.id === pendingModelId;
+        var card = document.createElement('div');
+        card.className = 'model-card' + (isActive ? ' active' : '') + (isPending ? ' pending' : '');
+        var classesHtml = (model.classes || []).slice(0, 20).map(function(c) {
+            return '<span class="model-class-tag">' + c + '</span>';
+        }).join('');
+        if ((model.classes || []).length > 20) classesHtml += '<span class="model-class-tag">+' + (model.classes.length - 20) + ' more</span>';
+        card.innerHTML =
+            '<div class="model-card-header">' +
+                '<div class="model-radio"><div class="model-radio-dot"></div></div>' +
+                '<div style="flex:1"><div class="model-name">' + model.name + '</div>' +
+                '<div class="model-meta">' + model.class_count + ' classes &middot; ' + model.input_size[0] + 'x' + model.input_size[1] + '</div></div>' +
+            '</div>' +
+            '<div class="model-desc">' + (model.description || '') + '</div>' +
+            '<div class="model-classes">' + classesHtml + '</div>' +
+            '<div class="model-restart-note">Restart server to apply</div>';
+        card.setAttribute('data-model-id', model.id);
+        card.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (model.id === activeModelId) return;
+            fetch('/api/models/active', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ model_id: model.id })
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.status === 'ok') {
+                    pendingModelId = model.id;
+                    // Update classes to show the new model's classes
+                    var m = availableModels.find(function(x) { return x.id === model.id; });
+                    DETECTION_CLASSES = buildClassesFromModel(m);
+                    DETECTION_CLASSES.forEach(function(c) {
+                        if (activeDetections[c.id] === undefined) activeDetections[c.id] = true;
+                    });
+                    renderModelList();
+                    renderDetectionGrid();
+                }
+            }).catch(function(err) { console.error('Model switch failed:', err); });
+        });
+        container.appendChild(card);
+    });
+}
+
+// ── Detection class grid with tabs + search ───────────────
+var currentCategory = 'All';
+var classSearchQuery = '';
+
+function getCategories() {
+    var cats = {};
+    DETECTION_CLASSES.forEach(function(c) { cats[c.category] = true; });
+    return ['All'].concat(Object.keys(cats).sort());
+}
+
+function renderDetectionGrid() {
+    var section = document.getElementById('detection-section');
+    if (!section) return;
+
+    // Build tabs
+    var categories = getCategories();
+    var tabsHtml = categories.map(function(cat) {
+        return '<div class="cat-tab' + (cat === currentCategory ? ' active' : '') + '" data-cat="' + cat + '">' + cat + '</div>';
+    }).join('');
+
+    // Count enabled
+    var enabledCount = DETECTION_CLASSES.filter(function(c) { return activeDetections[c.id] !== false; }).length;
+
+    section.innerHTML =
+        '<div class="class-toolbar">' +
+            '<input class="class-search" type="text" placeholder="Search classes..." id="class-search" value="' + classSearchQuery + '">' +
+            '<button class="toggle-all" onclick="toggleAllDetections()">' + enabledCount + '/' + DETECTION_CLASSES.length + ' enabled</button>' +
+        '</div>' +
+        '<div class="cat-tabs" id="cat-tabs">' + tabsHtml + '</div>' +
+        '<div class="detection-grid" id="detection-grid"></div>';
+
+    // Tab click handlers
+    document.querySelectorAll('.cat-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            currentCategory = tab.getAttribute('data-cat');
+            renderDetectionGrid();
+        });
+    });
+
+    // Search handler
+    var searchInput = document.getElementById('class-search');
+    searchInput.addEventListener('input', function() {
+        classSearchQuery = searchInput.value.toLowerCase();
+        renderClassItems();
+    });
+    // Focus search if there was a query
+    if (classSearchQuery) searchInput.focus();
+
+    renderClassItems();
+}
+
+function renderClassItems() {
+    var grid = document.getElementById('detection-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    var filtered = DETECTION_CLASSES.filter(function(cls) {
+        if (currentCategory !== 'All' && cls.category !== currentCategory) return false;
+        if (classSearchQuery && cls.name.toLowerCase().indexOf(classSearchQuery) === -1 && cls.id.toLowerCase().indexOf(classSearchQuery) === -1) return false;
+        return true;
+    });
+
+    filtered.forEach(function(cls) {
+        var active = activeDetections[cls.id] !== false;
+        var el = document.createElement('div');
+        el.className = 'detection-item priority-' + cls.priority + (active ? ' active' : '');
+        el.innerHTML =
+            '<div class="detection-check"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' +
+            '<div class="detection-info"><div class="detection-name">' + cls.name + '</div>' +
+            '<div class="detection-meta">' + cls.priority.toUpperCase() + ' &middot; ' + cls.category + '</div></div>';
+        el.onclick = function() { activeDetections[cls.id] = !activeDetections[cls.id]; saveDetections(); renderDetectionGrid(); };
+        grid.appendChild(el);
+    });
+
+    if (!filtered.length) {
+        grid.innerHTML = '<div style="color:#555;font-size:12px;padding:12px;">No matching classes</div>';
+    }
+}
+
+function toggleAllDetections() {
+    // Toggle only visible/filtered classes
+    var visible = DETECTION_CLASSES.filter(function(c) {
+        if (currentCategory !== 'All' && c.category !== currentCategory) return false;
+        if (classSearchQuery && c.name.toLowerCase().indexOf(classSearchQuery) === -1) return false;
+        return true;
+    });
+    var allOn = visible.every(function(c) { return activeDetections[c.id] !== false; });
+    visible.forEach(function(c) { activeDetections[c.id] = !allOn; });
+    saveDetections(); renderDetectionGrid();
+}
+
+function toggleSettings() {
+    var o = document.getElementById('settings-overlay');
+    o.classList.toggle('open');
+    if (o.classList.contains('open')) { renderModelList(); renderDetectionGrid(); }
+}
+
+// ── Debug Mode ──────────────────────────────────────────
+var debugMode = localStorage.getItem('gf_debug') === 'true';
+function toggleDebugMode() {
+    debugMode = !debugMode;
+    localStorage.setItem('gf_debug', debugMode);
+    updateDebugToggle();
+    if (!debugMode) { var c = document.getElementById('debug-canvas'); c.getContext('2d').clearRect(0, 0, c.width, c.height); }
+}
+function updateDebugToggle() {
+    var el = document.getElementById('debug-toggle');
+    if (debugMode) el.classList.add('active'); else el.classList.remove('active');
+}
+updateDebugToggle();
+
+// ── Config ──────────────────────────────────────────────
+var DANGER = 3.5, WARNING = 6.0, MAX_RANGE = 12.0;
+fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
+    if (cfg.zones) {
+        DANGER = cfg.zones.danger_m || DANGER;
+        WARNING = cfg.zones.warning_m || WARNING;
+        MAX_RANGE = cfg.zones.max_range_m || MAX_RANGE;
+    }
+});
+
+// ── Shared detection state for debug overlay + 3D scene ──
+var currentDetections = [];
+
+// ── Debug overlay — draw bounding boxes on camera feed ──
+var debugCanvas = document.getElementById('debug-canvas');
+var debugCtx = debugCanvas.getContext('2d');
+var camImg = document.getElementById('camera-feed');
+
+function drawDebugBoxes() {
+    if (!debugMode || !currentDetections.length) return;
+    var panel = document.getElementById('camera-panel');
+    var pw = panel.clientWidth, ph = panel.clientHeight;
+    debugCanvas.width = pw; debugCanvas.height = ph;
+    debugCtx.clearRect(0, 0, pw, ph);
+
+    // Compute image placement (object-fit: contain)
+    var imgW = camImg.naturalWidth || 1280, imgH = camImg.naturalHeight || 800;
+    var scale = Math.min(pw / imgW, ph / imgH);
+    var dw = imgW * scale, dh = imgH * scale;
+    var ox = (pw - dw) / 2, oy = (ph - dh) / 2;
+
+    currentDetections.forEach(function(det) {
+        if (!det.bbox) return;
+        // Filter by enabled classes
+        var classId = det.label || '';
+        if (activeDetections[classId] === false) return;
+
+        var x1 = ox + det.bbox[0] * dw;
+        var y1 = oy + det.bbox[1] * dh;
+        var x2 = ox + det.bbox[2] * dw;
+        var y2 = oy + det.bbox[3] * dh;
+        var w = x2 - x1, h = y2 - y1;
+
+        var color = 'rgba(96,165,250,0.8)';
+
+        debugCtx.strokeStyle = color;
+        debugCtx.lineWidth = 1;
+        debugCtx.strokeRect(x1, y1, w, h);
+
+        // Label: type + confidence
+        var label = (det.label || '?') + ' ' + Math.round((det.confidence || 0) * 100) + '%';
+        if (det.distance_m) label += ' ' + det.distance_m.toFixed(1) + 'm';
+        debugCtx.font = '10px -apple-system, system-ui, sans-serif';
+        var tw = debugCtx.measureText(label).width;
+        debugCtx.fillStyle = 'rgba(96,165,250,0.7)';
+        debugCtx.fillRect(x1, y1 - 14, tw + 6, 14);
+        debugCtx.fillStyle = '#fff';
+        debugCtx.fillText(label, x1 + 3, y1 - 3);
+    });
+}
+
+// ── Tesla-style 3D Scene ────────────────────────────────
+(function() {
+    var container = document.getElementById('scene-panel');
+
+    var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(640, 300);
+    renderer.setClearColor(0xf0f0f0, 1);
+    container.appendChild(renderer.domElement);
+
+    var scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0xf0f0f0, 30, 60);
+
+    // Camera — elevated behind origin, looking forward
+    var camera = new THREE.PerspectiveCamera(60, 640 / 300, 0.1, 100);
+    camera.position.set(0, 4, 3);
+    camera.lookAt(0, 0, -8);
+
+    // Lighting — bright, soft
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    var dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+    dirLight.position.set(5, 10, 5);
+    scene.add(dirLight);
+    var fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+    fillLight.position.set(-5, 5, -5);
+    scene.add(fillLight);
+
+    // Ground plane — light grey
+    var groundGeo = new THREE.PlaneGeometry(60, 60);
+    var groundMat = new THREE.MeshStandardMaterial({ color: 0xe8e8e8, roughness: 0.95 });
+    var ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = 0;
+    scene.add(ground);
+
+    // Grid overlay — subtle
+    var grid = new THREE.GridHelper(60, 60, 0xd0d0d0, 0xdcdcdc);
+    grid.position.y = 0.01;
+    scene.add(grid);
+
+    // Person mesh pool — reusable person figures
+    var personPool = [];
+    var PERSON_COLOR = 0x555555;
+
+    function createPersonMesh() {
+        var group = new THREE.Group();
+        var bodyMat = new THREE.MeshStandardMaterial({ color: PERSON_COLOR, roughness: 0.6 });
+
+        // Body
+        var bodyGeo = new THREE.CylinderGeometry(0.2, 0.25, 1.0, 8);
+        var body = new THREE.Mesh(bodyGeo, bodyMat);
+        body.position.y = 0.9;
+        group.add(body);
+
+        // Head
+        var headGeo = new THREE.SphereGeometry(0.18, 8, 8);
+        var head = new THREE.Mesh(headGeo, bodyMat);
+        head.position.y = 1.6;
+        group.add(head);
+
+        // Legs
+        var legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.7, 6);
+        var legL = new THREE.Mesh(legGeo, bodyMat);
+        legL.position.set(-0.1, 0.35, 0);
+        group.add(legL);
+        var legR = new THREE.Mesh(legGeo, bodyMat);
+        legR.position.set(0.1, 0.35, 0);
+        group.add(legR);
+
+        // Direction arrow — flat triangle on the ground pointing forward
+        var arrowShape = new THREE.Shape();
+        arrowShape.moveTo(0, 0.6);
+        arrowShape.lineTo(-0.2, 0);
+        arrowShape.lineTo(0.2, 0);
+        arrowShape.lineTo(0, 0.6);
+        var arrowGeo = new THREE.ShapeGeometry(arrowShape);
+        var arrowMat = new THREE.MeshBasicMaterial({ color: 0x3388ff, transparent: true, opacity: 0.7, side: THREE.DoubleSide });
+        var arrow = new THREE.Mesh(arrowGeo, arrowMat);
+        arrow.rotation.x = -Math.PI / 2;
+        arrow.position.set(0, 0.03, -0.4);
+        group.add(arrow);
+
+        group.visible = false;
+        scene.add(group);
+        return { group: group, mat: bodyMat, arrowMat: arrowMat };
+    }
+
+    // Pre-create pool of 20 person meshes
+    for (var i = 0; i < 20; i++) personPool.push(createPersonMesh());
+
+    // Track previous positions for direction
+    var prevPositions = {};
+
+    // Update 3D scene from detections
+    function updateScene(detections) {
+        // Hide all
+        personPool.forEach(function(p) { p.group.visible = false; });
+
+        var pi = 0;
+        detections.forEach(function(det) {
+            if (det.label !== 'person') return;
+            if (activeDetections['person'] === false) return;
+            if (pi >= personPool.length) return;
+
+            var xm = det.x_m || (det.spatial ? det.spatial.x : 0) || 0;
+            var zm = det.z_m || (det.spatial ? det.spatial.z : 0) || 0;
+            var tid = det.track_id || pi;
+
+            var p = personPool[pi++];
+            p.group.visible = true;
+
+            // Map to Three.js: x=right, z=-forward
+            var tx = xm, tz = -zm;
+            p.group.position.set(tx, 0, tz);
+
+            // Rotate person to face direction of movement
+            var prev = prevPositions[tid];
+            if (prev) {
+                var dx = tx - prev.x;
+                var dz = tz - prev.z;
+                if (dx * dx + dz * dz > 0.01) {
+                    var angle = Math.atan2(dx, dz);
+                    p.group.rotation.y = angle;
+                }
+            }
+            prevPositions[tid] = { x: tx, z: tz };
+
+            p.mat.color.setHex(PERSON_COLOR);
+        });
+    }
+
+    // Resize
+    function onResize() {
+        var w = container.clientWidth, h = container.clientHeight;
+        if (w < 10 || h < 10) return;
+        renderer.setSize(w, h);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+    }
+    window.addEventListener('resize', onResize);
+    setTimeout(onResize, 50);
+    setTimeout(onResize, 200);
+    setTimeout(onResize, 500);
+
+    function animate() {
+        requestAnimationFrame(animate);
+        updateScene(currentDetections);
+        drawDebugBoxes();
+        renderer.render(scene, camera);
+    }
+    animate();
+})();
+
+// ── HUD update (from SSE spatial data) ─────────────────
+function updateHud(data) {
+    var s = data.summary || {};
+    document.getElementById('hud-fps').textContent = data.fps || 0;
+    document.getElementById('hud-count').textContent = (data.detections || []).length;
+    document.getElementById('hud-nearest').textContent = s.closest_m ? s.closest_m.toFixed(1) + 'm' : '--';
+
+    // Update shared detection state
+    currentDetections = data.detections || [];
+
+    var zonePill = document.getElementById('zone-pill');
+    var zoneText = document.getElementById('zone-text');
+    if (s.danger_count > 0) {
+        zonePill.className = 'status-pill pill-danger';
+        zoneText.textContent = 'DANGER ' + s.closest_m.toFixed(1) + 'm';
+    } else if (s.warning_count > 0) {
+        zonePill.className = 'status-pill pill-warning';
+        zoneText.textContent = 'WARNING';
+    } else {
+        zonePill.className = 'status-pill pill-clear';
+        zoneText.textContent = 'CLEAR';
+    }
+}
+
+var sse = new EventSource('/api/spatial/stream');
+sse.onmessage = function(e) { try { updateHud(JSON.parse(e.data)); } catch(err) {} };
+sse.onerror = function() {
+    sse.close();
+    setInterval(function() {
+        fetch('/api/spatial').then(function(r) { return r.json(); }).then(updateHud).catch(function() {});
+    }, 500);
+};
+
+// ── Camera feed — double-buffered snapshot pull ──
+(function() {
+    var display = document.getElementById('camera-feed');
+    var buffer = new Image();
+    var prevUrl = null;
+    var inflight = false;
+    function pull() {
+        if (inflight) return;
+        inflight = true;
+        fetch('/api/camera/snapshot').then(function(r) {
+            if (r.status === 204) throw 'no frame';
+            return r.blob();
+        }).then(function(blob) {
+            var url = URL.createObjectURL(blob);
+            buffer.onload = function() {
+                if (prevUrl) URL.revokeObjectURL(prevUrl);
+                display.src = url; prevUrl = url;
+                inflight = false;
+                requestAnimationFrame(pull);
+            };
+            buffer.src = url;
+        }).catch(function() { inflight = false; setTimeout(pull, 500); });
+    }
+    pull();
+})();
+</script>
+</body>
+</html>

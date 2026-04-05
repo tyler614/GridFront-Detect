@@ -27,6 +27,7 @@ from typing import Any
 import numpy as np
 
 from pipeline.oak_config import OakConfig
+from pipeline.model_registry import get_model, get_default_model, COCO_LABELS
 
 logger = logging.getLogger(__name__)
 
@@ -45,31 +46,38 @@ except ImportError:
 
 
 # ---------------------------------------------------------------------------
-# Resolution helpers
+# Depth preset mapping (v3.5.0 API)
 # ---------------------------------------------------------------------------
-_RGB_RESOLUTION_MAP: dict[str, Any] = {}
 _DEPTH_PRESET_MAP: dict[str, Any] = {}
 
 if _DAI_AVAILABLE:
-    _RGB_RESOLUTION_MAP = {
-        "1080p": dai.ColorCameraProperties.SensorResolution.THE_1080_P,
-        "4k": dai.ColorCameraProperties.SensorResolution.THE_4_K,
-        "720p": dai.ColorCameraProperties.SensorResolution.THE_720_P,
-    }
     _DEPTH_PRESET_MAP = {
-        "HIGH_ACCURACY": dai.node.StereoDepth.PresetMode.HIGH_ACCURACY,
-        "HIGH_DENSITY": dai.node.StereoDepth.PresetMode.HIGH_DENSITY,
+        "HIGH_ACCURACY": dai.node.StereoDepth.PresetMode.ACCURACY,
+        "HIGH_DENSITY": dai.node.StereoDepth.PresetMode.DENSITY,
         "DEFAULT": dai.node.StereoDepth.PresetMode.DEFAULT,
     }
+
+# ---------------------------------------------------------------------------
+# RGB resolution to (width, height) for requestOutput()
+# ---------------------------------------------------------------------------
+_RGB_SIZE_MAP: dict[str, tuple[int, int]] = {
+    "800p": (1280, 800),
+    "720p": (1280, 720),
+    "480p": (640, 480),
+    "400p": (640, 400),
+}
 
 
 # ---------------------------------------------------------------------------
 # Detection dataclass (lightweight, dict-friendly)
 # ---------------------------------------------------------------------------
 class Detection:
-    """Single NN detection result."""
+    """Single NN detection result with optional 3D spatial position."""
 
-    __slots__ = ("label", "confidence", "x_min", "y_min", "x_max", "y_max")
+    __slots__ = (
+        "label", "confidence", "x_min", "y_min", "x_max", "y_max",
+        "spatial_x", "spatial_y", "spatial_z",
+    )
 
     def __init__(
         self,
@@ -79,6 +87,9 @@ class Detection:
         y_min: float,
         x_max: float,
         y_max: float,
+        spatial_x: float = 0.0,
+        spatial_y: float = 0.0,
+        spatial_z: float = 0.0,
     ):
         self.label = label
         self.confidence = confidence
@@ -86,22 +97,32 @@ class Detection:
         self.y_min = y_min
         self.x_max = x_max
         self.y_max = y_max
+        self.spatial_x = spatial_x  # metres, right +
+        self.spatial_y = spatial_y  # metres, down +
+        self.spatial_z = spatial_z  # metres, forward +
+
+    @property
+    def distance_m(self) -> float:
+        return math.sqrt(
+            self.spatial_x ** 2 + self.spatial_y ** 2 + self.spatial_z ** 2
+        )
 
     def to_dict(self) -> dict:
         return {
             "label": self.label,
             "confidence": round(self.confidence, 3),
             "bbox": [self.x_min, self.y_min, self.x_max, self.y_max],
+            "distance_m": round(self.distance_m, 2),
+            "spatial": {
+                "x": round(self.spatial_x, 3),
+                "y": round(self.spatial_y, 3),
+                "z": round(self.spatial_z, 3),
+            },
         }
 
 
-# MobileNet-SSD label map (VOC)
-MOBILENET_LABELS = [
-    "background", "aeroplane", "bicycle", "bird", "boat", "bottle", "bus",
-    "car", "cat", "chair", "cow", "diningtable", "dog", "horse",
-    "motorbike", "person", "pottedplant", "sheep", "sofa", "train",
-    "tvmonitor",
-]
+
+# COCO_LABELS imported from model_registry
 
 
 # ===================================================================
@@ -137,6 +158,8 @@ class OakDriver:
         self._rgb: np.ndarray | None = None
         self._depth: np.ndarray | None = None
         self._detections: list[Detection] = []
+        self._jpeg: bytes | None = None  # Pre-encoded JPEG for low-latency serving
+        self._encoded_rgb: bool = False  # True when using on-device MJPEG encoder
 
         # Health metrics
         self._fps: float = 0.0
@@ -179,14 +202,27 @@ class OakDriver:
             timestamp  — float, time.time() when frame was captured
         """
         with self._lock:
-            if self._rgb is None:
+            if self._jpeg is None and self._rgb is None:
                 return None
+            # Lazily decode JPEG to numpy if needed
+            rgb = self._rgb
+            if rgb is None and self._jpeg is not None:
+                import cv2
+                rgb = cv2.imdecode(
+                    np.frombuffer(self._jpeg, dtype=np.uint8),
+                    cv2.IMREAD_COLOR,
+                )
             return {
-                "rgb": self._rgb.copy(),
-                "depth": self._depth.copy() if self._depth is not None else None,
+                "rgb": rgb,
+                "depth": self._depth,
                 "detections": list(self._detections),
                 "timestamp": self._last_frame_time,
             }
+
+    def get_jpeg(self) -> bytes | None:
+        """Return pre-encoded JPEG bytes of the latest frame, or None."""
+        with self._lock:
+            return self._jpeg
 
     def health(self) -> dict:
         """Return current health metrics."""
@@ -207,7 +243,7 @@ class OakDriver:
     def discover() -> list[dict]:
         """Find all OAK-D cameras on the network.
 
-        Returns a list of dicts with keys: mx_id, state, name.
+        Returns a list of dicts with keys: mx_id, state, name, protocol.
         """
         if not _DAI_AVAILABLE:
             logger.warning("depthai not available — returning empty discovery list")
@@ -215,106 +251,193 @@ class OakDriver:
 
         results = []
         for info in dai.Device.getAllAvailableDevices():
+            device_id = info.getDeviceId() if hasattr(info, "getDeviceId") else info.deviceId
             results.append({
-                "mx_id": info.getMxId(),
+                "mx_id": device_id,
                 "state": str(info.state),
-                "name": info.getMxId(),
+                "name": info.name,
+                "protocol": str(info.protocol),
             })
         logger.info("Discovered %d OAK-D device(s)", len(results))
         return results
 
     # ------------------------------------------------------------------
-    # Live camera loop
+    # Live camera loop (depthai v3.5.0 API)
     # ------------------------------------------------------------------
 
-    def _build_pipeline(self) -> Any:
-        """Construct the depthai pipeline graph."""
-        cfg = self.config
-        pipeline = dai.Pipeline()
+    def _find_device_info(self) -> Any:
+        """Resolve a DeviceInfo for connection.
 
-        # ── RGB camera ────────────────────────────────────────────
-        cam_rgb = pipeline.create(dai.node.ColorCamera)
-        cam_rgb.setPreviewSize(*cfg.preview_size)
-        cam_rgb.setResolution(
-            _RGB_RESOLUTION_MAP.get(cfg.resolution_rgb, _RGB_RESOLUTION_MAP["1080p"])
-        )
-        cam_rgb.setInterleaved(False)
-        cam_rgb.setFps(cfg.fps)
+        Prefers discovery-based lookup (which returns fully-populated
+        DeviceInfo with correct state/protocol) over constructing from
+        raw IP, since the latter can trigger incompatible boot paths.
+        """
+        # Always try discovery first — more reliable for PoE
+        for attempt in range(6):
+            available = dai.Device.getAllAvailableDevices()
+            for info in available:
+                if self.device_id is None:
+                    logger.info("Discovery found device: %s (%s)", info.name, info.deviceId)
+                    return info  # No preference — return first
+                if info.name == self.device_id or info.deviceId == self.device_id:
+                    logger.info("Discovery matched device: %s (%s)", info.name, info.deviceId)
+                    return info
+            if not self.device_id:
+                break  # No device_id and nothing found
+            logger.info("Discovery attempt %d/6 — device %s not found yet", attempt + 1, self.device_id)
+            time.sleep(3)
 
-        # ── Mono cameras for stereo depth ─────────────────────────
-        mono_left = pipeline.create(dai.node.MonoCamera)
-        mono_left.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-        mono_left.setCamera("left")
-        mono_left.setFps(cfg.fps)
-
-        mono_right = pipeline.create(dai.node.MonoCamera)
-        mono_right.setResolution(dai.MonoCameraProperties.SensorResolution.THE_400_P)
-        mono_right.setCamera("right")
-        mono_right.setFps(cfg.fps)
-
-        # ── Stereo depth ──────────────────────────────────────────
-        stereo = pipeline.create(dai.node.StereoDepth)
-        stereo.setDefaultProfilePreset(
-            _DEPTH_PRESET_MAP.get(cfg.depth_preset, _DEPTH_PRESET_MAP["HIGH_ACCURACY"])
-        )
-        stereo.setLeftRightCheck(cfg.lr_check)
-        stereo.setExtendedDisparity(cfg.extended_disparity)
-        stereo.setSubpixel(cfg.subpixel)
-        mono_left.out.link(stereo.left)
-        mono_right.out.link(stereo.right)
-
-        # ── Neural network ────────────────────────────────────────
-        nn = pipeline.create(dai.node.MobileNetDetectionNetwork)
-        nn.setConfidenceThreshold(cfg.confidence_threshold)
-        nn.setBlobPath(
-            str(blobconverter.from_zoo(cfg.nn_model, shaves=cfg.nn_shaves))
-        )
-        cam_rgb.preview.link(nn.input)
-
-        # ── XLink outputs ─────────────────────────────────────────
-        xout_rgb = pipeline.create(dai.node.XLinkOut)
-        xout_rgb.setStreamName("rgb")
-        cam_rgb.video.link(xout_rgb.input)
-
-        xout_depth = pipeline.create(dai.node.XLinkOut)
-        xout_depth.setStreamName("depth")
-        stereo.depth.link(xout_depth.input)
-
-        xout_nn = pipeline.create(dai.node.XLinkOut)
-        xout_nn.setStreamName("nn")
-        nn.out.link(xout_nn.input)
-
-        return pipeline
+        # Fall back to constructing from IP/MX ID with protocol hints
+        if self.device_id:
+            logger.warning(
+                "Device %s not found via discovery — using direct DeviceInfo with TCP hint",
+                self.device_id,
+            )
+            info = dai.DeviceInfo(self.device_id)
+            info.state = dai.XLinkDeviceState.X_LINK_BOOTLOADER
+            info.protocol = dai.XLinkProtocol.X_LINK_TCP_IP
+            return info
+        return None
 
     def _connect(self) -> bool:
-        """Open a connection to the physical device. Returns True on success."""
+        """Build pipeline, connect to device, and set up output queues."""
         try:
-            pipeline = self._build_pipeline()
-            if self.device_id:
-                self._device = dai.Device(pipeline, dai.DeviceInfo(self.device_id))
+            cfg = self.config
+            device_info = self._find_device_info()
+
+            # ── Create pipeline with device ──────────────────────
+            if device_info:
+                self._pipeline = dai.Pipeline(dai.Device(device_info))
             else:
-                self._device = dai.Device(pipeline)
+                self._pipeline = dai.Pipeline()
+            p = self._pipeline
+
+            # ── Color camera (auto-assigns to CAM_A) ─────────────
+            cam_rgb = p.create(dai.node.Camera)
+            cam_rgb.build(sensorFps=cfg.fps)
+
+            # ── Stereo depth (optional — disabled saves PoE bandwidth)
+            if cfg.enable_depth:
+                stereo = p.create(dai.node.StereoDepth)
+                preset = _DEPTH_PRESET_MAP.get(
+                    cfg.depth_preset, _DEPTH_PRESET_MAP["HIGH_ACCURACY"]
+                )
+                stereo.build(autoCreateCameras=True, presetMode=preset)
+                stereo.setLeftRightCheck(cfg.lr_check)
+                stereo.setSubpixel(cfg.subpixel)
+
+                # Depth post-processing filters for clean output
+                stereo.initialConfig.postProcessing.thresholdFilter.minRange = int(cfg.min_depth_m * 1000)
+                stereo.initialConfig.postProcessing.thresholdFilter.maxRange = int(cfg.max_depth_m * 1000)
+                stereo.initialConfig.postProcessing.speckleFilter.enable = True
+                stereo.initialConfig.postProcessing.speckleFilter.speckleRange = 50
+                stereo.initialConfig.postProcessing.temporalFilter.enable = True
+                stereo.initialConfig.postProcessing.temporalFilter.alpha = 0.4
+                stereo.initialConfig.postProcessing.spatialFilter.enable = True
+                stereo.initialConfig.postProcessing.spatialFilter.alpha = 0.5
+                stereo.initialConfig.postProcessing.spatialFilter.holeFillingRadius = 2
+                stereo.initialConfig.postProcessing.decimationFilter.decimationFactor = 2
+
+                self._q_depth = stereo.depth.createOutputQueue()
+            else:
+                self._q_depth = None
+
+            # ── Spatial detection network (on-device inference) ──
+            self._q_nn = None
+            self._nn_labels: list[str] = COCO_LABELS  # default fallback
+            if cfg.enable_nn and cfg.enable_depth:
+                try:
+                    model_def = get_model(cfg.nn_model_id) or get_default_model()
+                    self._nn_labels = model_def.classes
+
+                    nn = p.create(dai.node.SpatialDetectionNetwork)
+
+                    if model_def.source == "local" and model_def.blob_path:
+                        # Custom-trained local blob file
+                        import os
+                        blob_abs = os.path.join(
+                            os.path.dirname(os.path.dirname(__file__)),
+                            model_def.blob_path,
+                        )
+                        nn.build(cam_rgb, stereo, blob_abs, fps=cfg.fps)
+                        logger.info(
+                            "SpatialDetectionNetwork loaded (local): %s (%s)",
+                            model_def.name, blob_abs,
+                        )
+                    else:
+                        # HubAI slug — auto-downloads model
+                        nn.build(cam_rgb, stereo, model_def.slug, fps=cfg.fps)
+                        logger.info(
+                            "SpatialDetectionNetwork loaded: %s (%s)",
+                            model_def.name, model_def.slug,
+                        )
+
+                    self._q_nn = nn.out.createOutputQueue()
+                except Exception:
+                    logger.exception(
+                        "Failed to set up detection network — "
+                        "running without on-device inference"
+                    )
+                    self._q_nn = None
+
+            # ── RGB output with on-device MJPEG encoding ────────
+            rgb_size = _RGB_SIZE_MAP.get(cfg.resolution_rgb, (640, 480))
+            rgb_out = cam_rgb.requestOutput(
+                rgb_size, type=dai.ImgFrame.Type.NV12, fps=cfg.fps
+            )
+
+            encoder = p.create(dai.node.VideoEncoder)
+            encoder.build(
+                rgb_out,
+                profile=dai.VideoEncoderProperties.Profile.MJPEG,
+                quality=80,
+                frameRate=cfg.fps,
+            )
+            self._q_rgb = encoder.bitstream.createOutputQueue()
+            self._encoded_rgb = True  # Flag: frames arrive as JPEG
+
+            # ── Start ────────────────────────────────────────────
+            p.start()
+            self._device = p.getDefaultDevice()
+
+            # ── IR illumination ──────────────────────────────────
+            ir_drivers = self._device.getIrDrivers()
+            if ir_drivers:
+                logger.info("IR drivers detected: %s", ir_drivers)
+                if cfg.ir_flood_intensity > 0:
+                    self._device.setIrFloodLightIntensity(cfg.ir_flood_intensity)
+                    logger.info("IR flood light set to %.0f%%", cfg.ir_flood_intensity * 100)
+                if cfg.ir_dot_intensity > 0:
+                    self._device.setIrLaserDotProjectorIntensity(cfg.ir_dot_intensity)
+                    logger.info("IR dot projector set to %.0f%%", cfg.ir_dot_intensity * 100)
+            else:
+                logger.warning("No IR drivers found on device")
+
             self._connected = True
             logger.info("Connected to OAK-D (id=%s)", self.device_id or "auto")
             return True
+
         except Exception:
             logger.exception("Failed to connect to OAK-D")
-            self._connected = False
+            self._disconnect()
             return False
 
     def _disconnect(self) -> None:
-        if self._device is not None:
+        if hasattr(self, "_pipeline") and self._pipeline is not None:
             try:
-                self._device.close()
+                self._pipeline.stop()
             except Exception:
                 pass
-            self._device = None
+            self._pipeline = None
+        self._device = None
+        self._q_rgb = None
+        self._q_depth = None
+        self._q_nn = None
         self._connected = False
 
     def _live_loop(self) -> None:
         """Acquisition loop for a real OAK-D camera with auto-reconnect."""
         while self._running:
-            # (Re)connect
             if not self._connected:
                 if not self._connect():
                     logger.info(
@@ -324,56 +447,73 @@ class OakDriver:
                     continue
 
             try:
-                q_rgb = self._device.getOutputQueue("rgb", maxSize=4, blocking=False)
-                q_depth = self._device.getOutputQueue("depth", maxSize=4, blocking=False)
-                q_nn = self._device.getOutputQueue("nn", maxSize=4, blocking=False)
-
                 while self._running and self._connected:
                     t0 = time.time()
 
-                    in_rgb = q_rgb.tryGet()
-                    in_depth = q_depth.tryGet()
-                    in_nn = q_nn.tryGet()
-
+                    in_rgb = self._q_rgb.tryGet()
                     if in_rgb is None:
                         time.sleep(0.001)
                         continue
 
-                    rgb_frame = in_rgb.getCvFrame()
+                    # MJPEG-encoded: use hardware JPEG directly, skip CPU decode
+                    if self._encoded_rgb:
+                        jpeg_bytes = bytes(in_rgb.getData())
+                        rgb_frame = None  # Decode lazily only if needed
+                    else:
+                        rgb_frame = in_rgb.getCvFrame()
+                        jpeg_bytes = self._encode_jpeg(rgb_frame)
 
                     depth_frame = None
-                    if in_depth is not None:
-                        # Raw disparity -> metres
-                        raw = in_depth.getFrame().astype(np.float32)
-                        # Convert disparity to depth; clamp to configured range
-                        depth_frame = np.clip(raw / 1000.0, self.config.min_depth_m, self.config.max_depth_m)
+                    if self._q_depth is not None:
+                        in_depth = self._q_depth.tryGet()
+                        if in_depth is not None:
+                            raw = in_depth.getFrame().astype(np.float32)
+                            depth_frame = np.clip(
+                                raw / 1000.0,
+                                self.config.min_depth_m,
+                                self.config.max_depth_m,
+                            )
 
+                    # ── Parse NN detections ──────────────────────
                     detections: list[Detection] = []
-                    if in_nn is not None:
-                        for det in in_nn.detections:
-                            label_idx = det.label
-                            label_str = (
-                                MOBILENET_LABELS[label_idx]
-                                if label_idx < len(MOBILENET_LABELS)
-                                else str(label_idx)
-                            )
-                            detections.append(
-                                Detection(
-                                    label=label_str,
-                                    confidence=det.confidence,
-                                    x_min=det.xmin,
-                                    y_min=det.ymin,
-                                    x_max=det.xmax,
-                                    y_max=det.ymax,
+                    if self._q_nn is not None:
+                        in_nn = self._q_nn.tryGet()
+                        if in_nn is not None:
+                            for det in in_nn.detections:
+                                label_id = det.label
+                                labels = self._nn_labels
+                                label_str = (
+                                    labels[label_id]
+                                    if 0 <= label_id < len(labels)
+                                    else f"class_{label_id}"
                                 )
-                            )
+                                sc = det.spatialCoordinates
+                                detections.append(
+                                    Detection(
+                                        label=label_str,
+                                        confidence=det.confidence,
+                                        x_min=det.xmin,
+                                        y_min=det.ymin,
+                                        x_max=det.xmax,
+                                        y_max=det.ymax,
+                                        spatial_x=sc.x / 1000.0,
+                                        spatial_y=sc.y / 1000.0,
+                                        spatial_z=sc.z / 1000.0,
+                                    )
+                                )
 
                     with self._lock:
                         self._rgb = rgb_frame
                         self._depth = depth_frame
                         self._detections = detections
+                        self._jpeg = jpeg_bytes
                         self._last_frame_time = time.time()
                         self._frame_count += 1
+
+                    # Auto-IR: check brightness every 30 frames
+                    if (self.config.ir_auto and self._device is not None
+                            and self._frame_count % 30 == 0):
+                        self._auto_ir_check(jpeg_bytes, rgb_frame)
 
                     self._update_fps(t0)
 
@@ -417,6 +557,14 @@ class OakDriver:
             # ── Synthetic detections ─────────────────────────────
             detections: list[Detection] = []
             for obj in mock_objects:
+                # Approximate spatial position from pixel + depth
+                depth_m = obj["depth_m"]
+                cx_norm = obj["cx"] / 640.0
+                cy_norm = obj["cy"] / 480.0
+                # Simple pinhole: x_m ≈ (cx_norm - 0.5) * depth * fov_factor
+                spatial_x = (cx_norm - 0.5) * depth_m * 1.5
+                spatial_y = (cy_norm - 0.5) * depth_m * 1.1
+                spatial_z = depth_m
                 detections.append(
                     Detection(
                         label=obj["label"],
@@ -425,13 +573,19 @@ class OakDriver:
                         y_min=max(0.0, (obj["cy"] - obj["radius"]) / 480),
                         x_max=min(1.0, (obj["cx"] + obj["radius"]) / 640),
                         y_max=min(1.0, (obj["cy"] + obj["radius"]) / 480),
+                        spatial_x=spatial_x,
+                        spatial_y=spatial_y,
+                        spatial_z=spatial_z,
                     )
                 )
+
+            jpeg_bytes = self._encode_jpeg(rgb)
 
             with self._lock:
                 self._rgb = rgb
                 self._depth = depth
                 self._detections = detections
+                self._jpeg = jpeg_bytes
                 self._last_frame_time = time.time()
                 self._frame_count += 1
 
@@ -480,6 +634,53 @@ class OakDriver:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _encode_jpeg(frame: np.ndarray, quality: int = 50) -> bytes:
+        """Encode a frame as JPEG for streaming."""
+        import cv2
+        _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+        return buf.tobytes()
+
+    _ir_active: bool = False
+    _ir_cooldown: int = 0  # Frames to wait before next IR toggle
+
+    def _auto_ir_check(self, jpeg_bytes: bytes | None, rgb_frame: np.ndarray | None) -> None:
+        """Auto-enable IR when the scene is dark. Uses cooldown to prevent flicker."""
+        if self._ir_cooldown > 0:
+            self._ir_cooldown -= 1
+            return
+        try:
+            import cv2
+            if rgb_frame is not None:
+                grey = cv2.cvtColor(rgb_frame, cv2.COLOR_BGR2GRAY)
+            elif jpeg_bytes is not None:
+                img = cv2.imdecode(
+                    np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_GRAYSCALE
+                )
+                if img is None:
+                    return
+                grey = img
+            else:
+                return
+
+            mean_brightness = float(grey.mean())
+
+            if mean_brightness < 35 and not self._ir_active:
+                self._device.setIrFloodLightIntensity(0.5)
+                self._device.setIrLaserDotProjectorIntensity(0.3)
+                self._ir_active = True
+                self._ir_cooldown = 150  # Wait ~5 seconds before re-checking
+                logger.info("Auto-IR ON (brightness=%.0f)", mean_brightness)
+            elif mean_brightness > 120 and self._ir_active:
+                # Only turn off if scene is very bright (not just IR-lit)
+                self._device.setIrFloodLightIntensity(0)
+                self._device.setIrLaserDotProjectorIntensity(0)
+                self._ir_active = False
+                self._ir_cooldown = 150
+                logger.info("Auto-IR OFF (brightness=%.0f)", mean_brightness)
+        except Exception:
+            pass
 
     def _update_fps(self, t0: float) -> None:
         """Maintain a rolling FPS estimate over the last 30 frames."""
