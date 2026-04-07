@@ -92,6 +92,13 @@ class ZoneClassifier:
         """
         for det in detections:
             zone, dist = self.classify(det)
+            # Fail-loud: any detection tagged ``unsafe`` (camera bumped,
+            # IMU lost, mount likely shifted) is promoted straight to
+            # DANGER regardless of geometric distance. The zone we
+            # *computed* is no longer trustworthy for that camera, so
+            # we refuse to report anything softer.
+            if det.get("unsafe"):
+                zone = "DANGER"
             det["zone"] = zone
             det["distance_m"] = round(dist, 2)
             det["bearing_deg"] = round(

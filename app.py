@@ -14,6 +14,7 @@ import numpy as np
 
 from detection_state import (
     get_state, get_camera_status, get_all_camera_health, get_uptime,
+    get_coverage_sectors,
 )
 from machine_profiles import get_machine_profile, get_all_profiles, get_detection_classes
 from pipeline.model_registry import list_models, get_model, MODELS
@@ -37,6 +38,7 @@ DEFAULT_CONFIG = {
     "machine_name": "Machine 1",
     "machine_type": "wheel_loader",
     "cameras": [],
+    "installed_cameras": [],
     "zones": {"danger_m": 3.0, "warning_m": 7.0, "max_range_m": 10.0},
     "connectivity": {"mode": "wifi", "wifi_ssid": "", "wifi_password": "", "apn": ""},
     "alerts": {"sound_enabled": True, "danger_sound": "alarm", "warning_sound": "chime"},
@@ -59,6 +61,60 @@ def load_config():
 def save_config(config):
     with open(CONFIG_PATH, "w") as f:
         json.dump(config, f, indent=2)
+
+
+def resolve_installed_cameras(config):
+    """Return the installed_cameras list for the current config.
+
+    If config already has an ``installed_cameras`` entry, use it as-is.
+    Otherwise, synthesise a list from the legacy ``cameras`` array by
+    pairing each entry's IP with the matching mount in the active machine
+    profile (by ``mount`` key, falling back to position in the list).
+    Returns [] when nothing can be resolved.
+    """
+    installed = config.get("installed_cameras") or []
+    if installed:
+        return [dict(c) for c in installed]
+
+    legacy = config.get("cameras") or []
+    if not legacy:
+        return []
+
+    machine_type = config.get("machine_type", "wheel_loader")
+    profile = get_machine_profile(machine_type)
+    if profile is None:
+        return []
+
+    mounts_by_id = {m["id"]: m for m in profile.get("camera_mounts", [])}
+    mounts_in_order = profile.get("camera_mounts", [])
+    spec = profile.get("camera_spec", {})
+    hfov = spec.get("hfov_deg", 127)
+    max_range = profile.get("default_zones", {}).get("max_range_m", 12.0)
+
+    out = []
+    for i, cam in enumerate(legacy):
+        ip = cam.get("ip")
+        if not ip:
+            continue
+        mount_id = cam.get("mount")
+        mount = mounts_by_id.get(mount_id)
+        if mount is None and i < len(mounts_in_order):
+            mount = mounts_in_order[i]
+        if mount is None:
+            continue
+        rot = mount.get("rotation", [0, 0, 0])
+        out.append({
+            "id": cam.get("id") or f"cam-{mount['id']}",
+            "label": cam.get("label") or mount.get("label", mount["id"]),
+            "device_id": ip,
+            "position_m": list(mount.get("position", [0, 0, 0])),
+            "pitch_deg": rot[0] if len(rot) > 0 else 0,
+            "yaw_deg":   rot[1] if len(rot) > 1 else 0,
+            "roll_deg":  rot[2] if len(rot) > 2 else 0,
+            "hfov_deg": hfov,
+            "max_range_m": max_range,
+        })
+    return out
 
 
 # ── Page Routes ──────────────────────────────────────────────
@@ -103,6 +159,20 @@ def machines_page():
 @app.route("/api/spatial")
 def get_spatial():
     return jsonify(get_state())
+
+
+@app.route("/api/coverage")
+def get_coverage():
+    """Return the current per-camera coverage sectors.
+
+    Sectors describe the FOV wedge each installed camera contributes to
+    the machine-world view, so the spatial view and cab display can render
+    accurately which arcs around the machine are actually monitored.
+    """
+    sectors = get_coverage_sectors()
+    if not sectors and _pipeline_runner is not None:
+        sectors = _pipeline_runner.coverage_sectors
+    return jsonify({"sectors": sectors, "count": len(sectors)})
 
 
 @app.route("/api/spatial/stream")
@@ -174,6 +244,81 @@ def delete_camera(camera_id):
     config["cameras"] = [c for c in config["cameras"] if c["id"] != camera_id]
     save_config(config)
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/cameras/<camera_id>/calibration_status", methods=["GET"])
+def camera_calibration_status(camera_id):
+    """Live calibration + stability telemetry for the Settings UI.
+
+    Polled while the Calibrate button countdown is visible. Returns both
+    the static reference state (calibrated_at, ref_quat) and the live
+    stability window (samples, max_delta_deg) so the UI can show a
+    real-time "Hold still… 2s… 1s… Locked ✓" indicator.
+    """
+    if _pipeline_runner is None:
+        return jsonify({"error": "No pipeline running"}), 503
+    status = _pipeline_runner.get_calibration_status(camera_id)
+    return jsonify(status)
+
+
+@app.route("/api/cameras/<camera_id>/calibrate", methods=["POST"])
+def camera_calibrate(camera_id):
+    """Snapshot the current IMU orientation as this camera's reference.
+
+    This is a SAFETY-CRITICAL endpoint. It refuses to commit unless:
+
+      * the driver is a real OAK-D (not mock),
+      * IMU packets are arriving,
+      * stability window shows the camera hasn't moved > 0.5° over 2s,
+      * BNO085 reports a reasonable accuracy.
+
+    On success, the reference quaternion + calibrated_at timestamp are
+    both written to the live pipeline (so the bump watchdog picks them
+    up immediately) AND persisted to config.json so they survive a
+    server restart. A failed calibrate returns 400 with a human-readable
+    reason that the Settings UI displays next to the button.
+    """
+    if _pipeline_runner is None:
+        return jsonify({"ok": False, "error": "no_pipeline"}), 503
+
+    result = _pipeline_runner.recalibrate_camera(camera_id)
+    if not result.get("ok"):
+        return jsonify(result), 400
+
+    # Persist to config.json so a reboot doesn't forget the reference
+    config = load_config()
+    installed = config.get("installed_cameras") or []
+    updated = False
+    for cam in installed:
+        if cam.get("id") == camera_id:
+            cam["imu_ref_quat"] = result["imu_ref_quat"]
+            cam["calibrated_at"] = result["calibrated_at"]
+            if "bump_threshold_deg" not in cam:
+                cam["bump_threshold_deg"] = 10.0
+            updated = True
+            break
+    if not updated:
+        # Config was migrated from legacy 'cameras' — rebuild and retry
+        installed = resolve_installed_cameras(config)
+        for cam in installed:
+            if cam.get("id") == camera_id:
+                cam["imu_ref_quat"] = result["imu_ref_quat"]
+                cam["calibrated_at"] = result["calibrated_at"]
+                cam["bump_threshold_deg"] = 10.0
+                updated = True
+                break
+        if updated:
+            config["installed_cameras"] = installed
+
+    if updated:
+        save_config(config)
+    else:
+        logger.warning(
+            "Calibrated %s but could not find it in config.json — "
+            "reference will be lost on restart", camera_id
+        )
+
+    return jsonify(result)
 
 
 @app.route("/api/cameras/<camera_id>/status")
@@ -256,7 +401,7 @@ def update_detection_config():
 def get_models():
     """List all available detection models with their classes."""
     config = load_config()
-    active_id = config.get("active_model", "yolov10n-coco")
+    active_id = config.get("active_model", "yolov6n-coco")
     models = list_models()
     for m in models:
         m["active"] = m["id"] == active_id
@@ -265,7 +410,12 @@ def get_models():
 
 @app.route("/api/models/active", methods=["POST"])
 def set_active_model():
-    """Switch the active detection model. Requires pipeline restart."""
+    """Switch the active detection model.
+
+    Persists to config.json and, if a live pipeline is running, hot-swaps the
+    model in a background thread. The response returns immediately; clients
+    should poll /api/camera/status to watch the restart complete.
+    """
     data = request.json
     model_id = data.get("model_id") if data else None
     if not model_id or model_id not in MODELS:
@@ -273,8 +423,29 @@ def set_active_model():
     config = load_config()
     config["active_model"] = model_id
     save_config(config)
-    # Pipeline restart would happen here in production
-    return jsonify({"status": "ok", "active_model": model_id, "restart_required": True})
+
+    if _pipeline_runner is not None:
+        import threading as _threading
+        def _do_restart():
+            try:
+                _pipeline_runner.restart_with_model(model_id)
+            except Exception:
+                logger.exception("Pipeline restart with model %s failed", model_id)
+        _threading.Thread(
+            target=_do_restart, daemon=True, name=f"model-swap-{model_id}"
+        ).start()
+        return jsonify({
+            "status": "restarting",
+            "active_model": model_id,
+            "message": "Pipeline is restarting with the new model.",
+        }), 202
+
+    return jsonify({
+        "status": "ok",
+        "active_model": model_id,
+        "restart_required": False,
+        "message": "No live pipeline — model will be used on next server start.",
+    })
 
 
 # ── System Health API ────────────────────────────────────────
@@ -376,6 +547,103 @@ def set_ir():
 
 
 # ── Camera Video Feed (MJPEG) ─────────────────────────────────
+
+@app.route("/api/camera/status")
+def camera_status_overview():
+    """High-level camera connection state for the livestream UI.
+
+    Returns:
+        {
+          "state": "connected" | "connecting" | "restarting" | "error" | "no_camera",
+          "model": "yolov6n-coco",
+          "model_name": "YOLOv10 Nano (General)",
+          "fps": 12.5,
+          "last_frame_age_s": 0.04 or null,
+          "message": "human-readable detail when not connected",
+          "device_id": "169.254.1.222" or null
+        }
+    """
+    config = load_config()
+    active_model_id = config.get("active_model", "yolov6n-coco")
+    model_def = MODELS.get(active_model_id)
+    model_name = model_def.name if model_def else active_model_id
+
+    # No pipeline at all
+    if _pipeline_runner is None:
+        return jsonify({
+            "state": "no_camera",
+            "model": active_model_id,
+            "model_name": model_name,
+            "fps": 0,
+            "last_frame_age_s": None,
+            "message": "No pipeline running on this server.",
+            "device_id": None,
+        })
+
+    stats = _pipeline_runner.stats
+
+    # Restart in progress
+    if stats.get("restarting"):
+        new_model_id = stats.get("active_model", active_model_id)
+        new_model_def = MODELS.get(new_model_id)
+        new_model_name = new_model_def.name if new_model_def else new_model_id
+        return jsonify({
+            "state": "restarting",
+            "model": new_model_id,
+            "model_name": new_model_name,
+            "fps": 0,
+            "last_frame_age_s": None,
+            "message": f"Switching model to {new_model_name}…",
+            "device_id": None,
+        })
+
+    cameras = stats.get("cameras", {})
+    if not cameras:
+        return jsonify({
+            "state": "no_camera",
+            "model": active_model_id,
+            "model_name": model_name,
+            "fps": 0,
+            "last_frame_age_s": None,
+            "message": "No cameras configured. Add one in Settings.",
+            "device_id": None,
+        })
+
+    # Pick the most informative driver: prefer non-mock, then connected
+    def _rank(h):
+        return (not h.get("mock", False), h.get("connected", False))
+    cam_id, health = max(cameras.items(), key=lambda kv: _rank(kv[1]))
+
+    now = time.time()
+    last_frame_age = None
+    if health.get("last_frame_time"):
+        last_frame_age = round(now - health["last_frame_time"], 2)
+
+    device_id = health.get("device_id")
+
+    if health.get("connected") and last_frame_age is not None and last_frame_age < 2.0:
+        state = "connected"
+        message = ""
+    elif health.get("last_error"):
+        state = "error"
+        message = health["last_error"]
+    elif not health.get("ever_connected"):
+        state = "connecting"
+        message = f"Connecting to camera {device_id or ''}…".strip()
+    else:
+        state = "connecting"
+        message = "Reconnecting to camera…"
+
+    return jsonify({
+        "state": state,
+        "model": health.get("model_id", active_model_id),
+        "model_name": model_name,
+        "fps": health.get("fps", 0),
+        "last_frame_age_s": last_frame_age,
+        "message": message,
+        "device_id": device_id,
+    })
+
 
 @app.route("/api/camera/snapshot")
 def camera_snapshot():
@@ -660,38 +928,30 @@ if __name__ == "__main__":
 
     print(f"[GridFront Detect] Starting — machine: {machine_type}")
 
-    # Discover cameras on the network
+    # Resolve the physically-installed cameras. installed_cameras in
+    # config.json is the source of truth; fall back to synthesising from
+    # the legacy `cameras` array so older configs keep working.
+    installed_cameras = resolve_installed_cameras(config)
+
+    # Optional: if broadcast discovery finds extra OAK-Ds not listed in
+    # config, just log them — installers should add them via Settings.
     from pipeline.oak_driver import OakDriver
     devices = OakDriver.discover()
-
-    # Build device_ids mapping: cam-{mount_id} -> IP or MX ID
-    # First try broadcast discovery, then fall back to config IPs
-    device_ids = {}
     if devices:
         print(f"  Found {len(devices)} OAK-D camera(s) via broadcast:")
         for d in devices:
             print(f"    {d['name']} ({d['mx_id']}) — {d['state']}")
-        from machine_profiles import get_machine_profile as _gmp
-        profile = _gmp(machine_type)
-        mounts = profile["camera_mounts"] if profile else []
-        for i, d in enumerate(devices):
-            if i < len(mounts):
-                cam_id = f"cam-{mounts[i]['id']}"
-                device_ids[cam_id] = d["name"]
-                print(f"    -> Assigned to {cam_id} ({mounts[i]['label']})")
-    if not device_ids:
-        # PoE broadcast discovery is unreliable; check config for known IPs
-        cam_configs = config.get("cameras", [])
-        poe_entries = [(c.get("mount", f"{i}"), c["ip"])
-                       for i, c in enumerate(cam_configs) if c.get("ip")]
-        if poe_entries:
-            print(f"  Using {len(poe_entries)} camera IP(s) from config.json:")
-            for mount_id, ip in poe_entries:
-                cam_id = f"cam-{mount_id}"
-                device_ids[cam_id] = ip
-                print(f"    {cam_id} -> {ip}")
-        else:
-            print("  No cameras found — pipeline will retry on connect.")
+
+    if installed_cameras:
+        print(f"  Installed cameras ({len(installed_cameras)}):")
+        for cam in installed_cameras:
+            print(
+                f"    {cam['id']} '{cam['label']}' @ "
+                f"pos={cam['position_m']} yaw={cam.get('yaw_deg', 0)}° "
+                f"hfov={cam.get('hfov_deg', 127)}° -> {cam.get('device_id')}"
+            )
+    else:
+        print("  No installed_cameras configured — add one via Settings.")
 
     from pipeline.pipeline_runner import PipelineRunner
     active_model = config.get("active_model", "yolov6n-coco")
@@ -700,7 +960,7 @@ if __name__ == "__main__":
         machine_type=machine_type,
         mock=False,
         zone_override=config.get("zones"),
-        device_ids=device_ids,
+        installed_cameras=installed_cameras,
         active_model_id=active_model,
     )
     _pipeline_runner.start()

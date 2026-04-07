@@ -29,6 +29,50 @@ import numpy as np
 from pipeline.oak_config import OakConfig
 from pipeline.model_registry import get_model, get_default_model, COCO_LABELS
 
+# ── Safety-relevant label filter ────────────────────────────────────────
+# YOLOv6n-COCO is a generic 80-class detector — perfect for spotting
+# people on a construction site, deeply unhelpful when it occasionally
+# decides a person is a "tvmonitor" or "teddy bear". Filter to the
+# classes we actually care about for industrial safety, and coalesce
+# the four vehicle subclasses into a single "vehicle" label so the
+# WorldTracker doesn't churn track IDs when YOLO flip-flops between
+# car/truck/bus on the same physical object. GridFront-v1 (the custom
+# model) will replace this with site-specific classes — until then this
+# is the right denoising for the placeholder model.
+_SAFETY_LABELS: dict[str, str] = {
+    "person": "person",
+    "bicycle": "vehicle",
+    "car": "vehicle",
+    "motorbike": "vehicle",
+    "bus": "vehicle",
+    "truck": "vehicle",
+}
+
+
+def _quat_mean(quats):
+    """Mean of a list of (qx,qy,qz,qw) unit quaternions.
+
+    Uses sign-normalized sum-and-renormalize — cheap and correct for
+    the small angular spreads we see from vibration (a few degrees).
+    Returns ``None`` for an empty input.
+    """
+    if not quats:
+        return None
+    q0 = quats[0]
+    sx = sy = sz = sw = 0.0
+    for q in quats:
+        # Flip any quat in the opposite hemisphere from q0 so we don't
+        # average q and -q into zero.
+        dot = q0[0] * q[0] + q0[1] * q[1] + q0[2] * q[2] + q0[3] * q[3]
+        if dot < 0:
+            sx -= q[0]; sy -= q[1]; sz -= q[2]; sw -= q[3]
+        else:
+            sx += q[0]; sy += q[1]; sz += q[2]; sw += q[3]
+    n = math.sqrt(sx * sx + sy * sy + sz * sz + sw * sw)
+    if n == 0:
+        return q0
+    return (sx / n, sy / n, sz / n, sw / n)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -54,6 +98,14 @@ if _DAI_AVAILABLE:
     _DEPTH_PRESET_MAP = {
         "HIGH_ACCURACY": dai.node.StereoDepth.PresetMode.ACCURACY,
         "HIGH_DENSITY": dai.node.StereoDepth.PresetMode.DENSITY,
+        # FAST_DENSITY and FAST_ACCURACY trade a bit of depth quality
+        # for ~20% lower VPU cost. Since SpatialDetectionNetwork only
+        # needs depth at the bbox centroids (crop-and-average), we
+        # don't need full per-pixel density — freeing VPU cycles for
+        # the NN gets us closer to the 30 FPS camera ceiling.
+        "FAST_DENSITY": dai.node.StereoDepth.PresetMode.FAST_DENSITY,
+        "FAST_ACCURACY": dai.node.StereoDepth.PresetMode.FAST_ACCURACY,
+        "ROBOTICS": dai.node.StereoDepth.PresetMode.ROBOTICS,
         "DEFAULT": dai.node.StereoDepth.PresetMode.DEFAULT,
     }
 
@@ -157,20 +209,29 @@ class OakDriver:
         # Latest frame data (protected by _lock)
         self._rgb: np.ndarray | None = None
         self._depth: np.ndarray | None = None
+        self._last_depth_host_t: float = 0.0  # Rate limiter for host-side depth copy
         self._detections: list[Detection] = []
         self._jpeg: bytes | None = None  # Pre-encoded JPEG for low-latency serving
         self._encoded_rgb: bool = False  # True when using on-device MJPEG encoder
 
         # IMU orientation (rotation vector as quaternion + euler)
-        self._imu_rotation: dict | None = None  # {qx, qy, qz, qw, pitch, roll, yaw}
+        self._imu_rotation: dict | None = None  # {qx, qy, qz, qw, pitch, roll, yaw, accuracy_rad}
+        # Ring buffer of recent quaternions for stability checking:
+        # list of (timestamp, (qx, qy, qz, qw)). Kept short — only the
+        # last ~3 seconds. Used by is_stable() for the calibrate button.
+        self._imu_history: list[tuple[float, tuple[float, float, float, float]]] = []
 
         # Health metrics
-        self._fps: float = 0.0
+        self._fps: float = 0.0          # RGB delivery rate (encoder output)
+        self._nn_fps: float = 0.0       # NN detection throughput (decoupled)
         self._latency_ms: float = 0.0
         self._connected: bool = False
         self._frame_count: int = 0
         self._last_frame_time: float = 0.0
         self._fps_window: list[float] = []
+        self._nn_fps_window: list[float] = []  # Ring buffer of NN packet arrival times
+        self._last_error: str | None = None  # Last connect/stream error, cleared on success
+        self._ever_connected: bool = False   # True once _connect() has succeeded at least once
 
     # ------------------------------------------------------------------
     # Public API
@@ -230,17 +291,163 @@ class OakDriver:
     def get_imu(self) -> dict | None:
         """Return latest IMU orientation, or None if unavailable."""
         with self._lock:
-            return self._imu_rotation
+            return dict(self._imu_rotation) if self._imu_rotation else None
+
+    def get_imu_average(self, window_s: float = 2.0) -> dict | None:
+        """Return a vibration-averaged IMU quaternion over the last ``window_s``.
+
+        Critical for the bump watchdog on heavy equipment: a 650hp diesel
+        shaking the mount will jitter the instantaneous quaternion by
+        several degrees while the *mean* orientation is rock-stable. The
+        watchdog compares this averaged quat against the reference, so
+        vibration alone never trips the alarm.
+
+        Returns ``None`` if there's no history yet. Otherwise a dict with
+        ``qx/qy/qz/qw``, ``samples``, ``timestamp`` (latest sample time),
+        and ``accuracy_rad`` (latest BNO085 estimate).
+        """
+        now = time.time()
+        with self._lock:
+            history = [
+                (t, q) for (t, q) in self._imu_history
+                if now - t <= window_s
+            ]
+            latest = dict(self._imu_rotation) if self._imu_rotation else None
+        if not history or latest is None:
+            return None
+        quats = [q for (_t, q) in history]
+        mq = _quat_mean(quats)
+        if mq is None:
+            return None
+        return {
+            "qx": mq[0], "qy": mq[1], "qz": mq[2], "qw": mq[3],
+            "samples": len(history),
+            "timestamp": history[-1][0],
+            "accuracy_rad": latest.get("accuracy_rad"),
+        }
+
+    def is_stable(
+        self,
+        window_s: float = 3.0,
+        max_delta_deg: float = 3.0,
+        require_samples: int = 20,
+    ) -> dict:
+        """Check whether the IMU has been steady enough to calibrate.
+
+        Returns a dict shaped like::
+
+            {
+              "stable": bool,
+              "samples": int,
+              "max_delta_deg": float,  # observed worst-case angle over window
+              "window_s": float,
+              "accuracy_rad": float | None,  # latest BNO085 accuracy estimate
+              "reason": str,  # human-readable when stable=False
+            }
+
+        Stability is defined as: the mean quaternion of the FIRST half
+        of the window is within ``max_delta_deg`` of the mean of the
+        SECOND half. This tolerates high-frequency vibration (diesel
+        engines, hydraulic pumps, pneumatic hammers) while still
+        catching a real drift — if the mean orientation is moving, the
+        two halves disagree; if only the samples jitter around a fixed
+        mean, the two halves match.
+
+        The calibrate API endpoint MUST call this before snapshotting
+        a reference quaternion — calibrating while the camera is still
+        settling is exactly how a zone gets locked to a wrong frame.
+        """
+        now = time.time()
+        with self._lock:
+            history = [
+                (t, q) for (t, q) in self._imu_history
+                if now - t <= window_s
+            ]
+            latest = dict(self._imu_rotation) if self._imu_rotation else None
+
+        if latest is None or not history:
+            return {
+                "stable": False,
+                "samples": len(history),
+                "max_delta_deg": 0.0,
+                "window_s": window_s,
+                "accuracy_rad": None,
+                "reason": "No IMU data yet",
+            }
+
+        if len(history) < require_samples:
+            return {
+                "stable": False,
+                "samples": len(history),
+                "max_delta_deg": 0.0,
+                "window_s": window_s,
+                "accuracy_rad": latest.get("accuracy_rad"),
+                "reason": f"Collecting IMU samples ({len(history)}/{require_samples})",
+            }
+
+        # Split-half mean drift: compare the averaged orientation of the
+        # older half of the window against the averaged orientation of
+        # the newer half. Vibration (symmetric jitter around a fixed
+        # mean) cancels in the averages; true drift shows up because
+        # the two halves no longer agree.
+        mid = len(history) // 2
+        older = [q for (_t, q) in history[:mid]]
+        newer = [q for (_t, q) in history[mid:]]
+        q_old = _quat_mean(older) if older else None
+        q_new = _quat_mean(newer) if newer else None
+        if q_old is None or q_new is None:
+            worst_deg = 0.0
+        else:
+            dot = abs(
+                q_old[0] * q_new[0] + q_old[1] * q_new[1]
+                + q_old[2] * q_new[2] + q_old[3] * q_new[3]
+            )
+            dot = min(1.0, max(-1.0, dot))
+            worst_deg = math.degrees(2.0 * math.acos(dot))
+
+        accuracy_rad = latest.get("accuracy_rad")
+        # BNO085 reports absolute-orientation uncertainty in radians. A
+        # fresh power-on sits around 6-10° until the magnetometer sees a
+        # figure-8 calibration; it settles to ~2-3° after. We only need
+        # *consistent* readings for the bump watchdog (deltas relative
+        # to the reference quat) so absolute accuracy just needs to be
+        # "sensor isn't flailing" — 10° is a comfortable ceiling.
+        acc_ok = accuracy_rad is None or accuracy_rad <= math.radians(10.0)
+
+        stable = worst_deg <= max_delta_deg and acc_ok
+        reason = ""
+        if not stable:
+            if worst_deg > max_delta_deg:
+                reason = f"Camera moving ({worst_deg:.2f}° > {max_delta_deg}°)"
+            elif not acc_ok:
+                reason = (
+                    f"IMU accuracy {math.degrees(accuracy_rad):.1f}° — "
+                    "wave camera in a figure-8 to calibrate compass"
+                )
+
+        return {
+            "stable": stable,
+            "samples": len(history),
+            "max_delta_deg": round(worst_deg, 3),
+            "window_s": window_s,
+            "accuracy_rad": accuracy_rad,
+            "reason": reason,
+        }
 
     def health(self) -> dict:
         """Return current health metrics."""
         return {
             "connected": self._connected,
             "mock": self.mock,
-            "fps": round(self._fps, 1),
+            "fps": round(self._fps, 1),           # Camera / encoder rate
+            "nn_fps": round(self._nn_fps, 1),     # NN inference throughput
             "latency_ms": round(self._latency_ms, 1),
             "frame_count": self._frame_count,
             "device_id": self.device_id,
+            "last_error": self._last_error,
+            "ever_connected": self._ever_connected,
+            "model_id": self.config.nn_model_id,
+            "last_frame_time": self._last_frame_time,
         }
 
     # ------------------------------------------------------------------
@@ -324,6 +531,23 @@ class OakDriver:
             cam_rgb = p.create(dai.node.Camera)
             cam_rgb.build(sensorFps=cfg.fps)
 
+            # Cap auto-exposure to the frame period so the sensor can't
+            # drop below target FPS in low light. At 30 FPS the frame
+            # period is 33333 µs — if AE extends exposure past this,
+            # the OV9782 automatically halves the sensor rate, capping
+            # us at ~15-28 FPS depending on scene brightness. Pinning
+            # the ceiling at 33ms guarantees 30 FPS; the image will
+            # just get noisier (ISO goes up) in dim conditions.
+            try:
+                max_exp_us = int(1_000_000 / max(cfg.fps, 1)) - 500  # 500µs readout margin
+                cam_rgb.initialControl.setAutoExposureLimit(max_exp_us)
+                logger.info(
+                    "Auto-exposure capped at %d µs to hold %d FPS",
+                    max_exp_us, cfg.fps,
+                )
+            except Exception:
+                logger.warning("Could not set auto-exposure limit", exc_info=True)
+
             # ── Stereo depth (optional — disabled saves PoE bandwidth)
             if cfg.enable_depth:
                 stereo = p.create(dai.node.StereoDepth)
@@ -340,9 +564,27 @@ class OakDriver:
                 stereo.initialConfig.postProcessing.speckleFilter.enable = False
                 stereo.initialConfig.postProcessing.temporalFilter.enable = False
                 stereo.initialConfig.postProcessing.spatialFilter.enable = False
-                stereo.initialConfig.postProcessing.decimationFilter.decimationFactor = 2
+                # Depth XLink bandwidth was the main reason we were
+                # capped at ~14 FPS: uint16 * 640x400 * 30 ≈ 120 Mbps,
+                # which saturates 100-Base PoE and starves the MJPEG
+                # stream. Decimation 4 drops depth to 320x200 ≈ 30 Mbps
+                # while still giving us enough resolution for spatial
+                # NN output and the depth image API.
+                stereo.initialConfig.postProcessing.decimationFilter.decimationFactor = 4
 
-                self._q_depth = stereo.depth.createOutputQueue()
+                # maxSize=1, non-blocking: always serve the latest
+                # depth frame, drop anything older instead of piling up
+                # a backlog that can stall the pipeline under load.
+                try:
+                    self._q_depth = stereo.depth.createOutputQueue(maxSize=1, blocking=False)
+                except TypeError:
+                    # Older depthai signatures — fall back and set after
+                    self._q_depth = stereo.depth.createOutputQueue()
+                    try:
+                        self._q_depth.setMaxSize(1)
+                        self._q_depth.setBlocking(False)
+                    except Exception:
+                        pass
             else:
                 self._q_depth = None
 
@@ -350,39 +592,83 @@ class OakDriver:
             self._q_nn = None
             self._nn_labels: list[str] = COCO_LABELS  # default fallback
             if cfg.enable_nn and cfg.enable_depth:
+                # NN failures are fatal: an orphan SpatialDetectionNetwork node
+                # with no blob crashes p.start() with a cryptic
+                # "NeuralNetwork(N) - No blob is loaded" error. Raise a clean,
+                # user-facing error instead so the status API can surface it.
+                model_def = get_model(cfg.nn_model_id) or get_default_model()
+                self._nn_labels = model_def.classes
+
+                nn = p.create(dai.node.SpatialDetectionNetwork)
+
                 try:
-                    model_def = get_model(cfg.nn_model_id) or get_default_model()
-                    self._nn_labels = model_def.classes
-
-                    nn = p.create(dai.node.SpatialDetectionNetwork)
-
                     if model_def.source == "local" and model_def.blob_path:
-                        # Custom-trained local blob file
                         import os
                         blob_abs = os.path.join(
                             os.path.dirname(os.path.dirname(__file__)),
                             model_def.blob_path,
                         )
+                        if not os.path.isfile(blob_abs):
+                            raise RuntimeError(
+                                f"Local blob for '{model_def.id}' not found at "
+                                f"{blob_abs}. Drop the compiled .blob file there "
+                                "and restart, or pick a different model."
+                            )
                         nn.build(cam_rgb, stereo, blob_abs, fps=cfg.fps)
                         logger.info(
                             "SpatialDetectionNetwork loaded (local): %s (%s)",
                             model_def.name, blob_abs,
                         )
                     else:
-                        # HubAI slug — auto-downloads model
                         nn.build(cam_rgb, stereo, model_def.slug, fps=cfg.fps)
                         logger.info(
                             "SpatialDetectionNetwork loaded: %s (%s)",
                             model_def.name, model_def.slug,
                         )
+                except Exception as e:
+                    # Extract the most useful line from the depthai error
+                    msg = str(e).strip().splitlines()[-1] if str(e).strip() else repr(e)
+                    if "404" in msg or "Cannot find a Model" in msg:
+                        pretty = (
+                            f"Model '{model_def.id}' not found on HubAI "
+                            f"(slug: {model_def.slug}). Pick a different model in Settings."
+                        )
+                    else:
+                        pretty = f"Model '{model_def.id}' failed to load: {msg}"
+                    logger.error("NN build failed — %s", pretty)
+                    raise RuntimeError(pretty) from e
 
+                try:
+                    self._q_nn = nn.out.createOutputQueue(maxSize=1, blocking=False)
+                except TypeError:
                     self._q_nn = nn.out.createOutputQueue()
-                except Exception:
-                    logger.exception(
-                        "Failed to set up detection network — "
-                        "running without on-device inference"
-                    )
-                    self._q_nn = None
+                    try:
+                        self._q_nn.setMaxSize(1); self._q_nn.setBlocking(False)
+                    except Exception:
+                        pass
+
+                # CRITICAL: make the NN input non-blocking so cam_rgb
+                # is never back-pressured by slow inference. This is the
+                # async pipeline pattern — when the NN can't keep up,
+                # incoming frames simply drop at its input queue and the
+                # encoder branch continues running at full 30 FPS. The
+                # tracker downstream covers the gap by predicting
+                # positions between NN updates.
+                for attr in ("input", "inputDepth"):
+                    port = getattr(nn, attr, None)
+                    if port is None:
+                        continue
+                    try:
+                        port.setBlocking(False)
+                    except Exception:
+                        pass
+                    for setter in ("setQueueSize", "setMaxSize"):
+                        fn = getattr(port, setter, None)
+                        if fn:
+                            try:
+                                fn(1)
+                            except Exception:
+                                pass
 
             # ── RGB output with on-device MJPEG encoding ────────
             rgb_size = _RGB_SIZE_MAP.get(cfg.resolution_rgb, (640, 480))
@@ -397,7 +683,17 @@ class OakDriver:
                 quality=60,
                 frameRate=cfg.fps,
             )
-            self._q_rgb = encoder.bitstream.createOutputQueue()
+            # Encoder output queue: maxSize=1 non-blocking so the UI
+            # always sees the newest JPEG and we never sit on stale
+            # frames. This is what kills apparent lag the most.
+            try:
+                self._q_rgb = encoder.bitstream.createOutputQueue(maxSize=1, blocking=False)
+            except TypeError:
+                self._q_rgb = encoder.bitstream.createOutputQueue()
+                try:
+                    self._q_rgb.setMaxSize(1); self._q_rgb.setBlocking(False)
+                except Exception:
+                    pass
             self._encoded_rgb = True  # Flag: frames arrive as JPEG
 
             # ── IMU — rotation vector for camera orientation ────
@@ -407,7 +703,14 @@ class OakDriver:
                 imu.enableIMUSensor(dai.IMUSensor.ROTATION_VECTOR, 100)
                 imu.setBatchReportThreshold(1)
                 imu.setMaxBatchReports(1)
-                self._q_imu = imu.out.createOutputQueue()
+                try:
+                    self._q_imu = imu.out.createOutputQueue(maxSize=4, blocking=False)
+                except TypeError:
+                    self._q_imu = imu.out.createOutputQueue()
+                    try:
+                        self._q_imu.setMaxSize(4); self._q_imu.setBlocking(False)
+                    except Exception:
+                        pass
                 logger.info("IMU enabled (rotation vector @ 100 Hz)")
             except Exception:
                 logger.warning("IMU not available on this device — orientation disabled")
@@ -430,33 +733,63 @@ class OakDriver:
                 logger.warning("No IR drivers found on device")
 
             self._connected = True
+            self._ever_connected = True
+            self._last_error = None
             logger.info("Connected to OAK-D (id=%s)", self.device_id or "auto")
             return True
 
-        except Exception:
+        except Exception as e:
+            # Prefer an already-friendly RuntimeError message; otherwise use last line
+            msg = str(e).strip().splitlines()[-1] if str(e).strip() else repr(e)
+            self._last_error = msg
             logger.exception("Failed to connect to OAK-D")
             self._disconnect()
             return False
 
     def _disconnect(self) -> None:
-        # Close the device explicitly first to release XLink
-        if self._device is not None:
-            try:
-                self._device.close()
-                logger.info("OAK-D device closed (XLink released)")
-            except Exception:
-                pass
-            self._device = None
-        if hasattr(self, "_pipeline") and self._pipeline is not None:
-            try:
-                self._pipeline.stop()
-            except Exception:
-                pass
-            self._pipeline = None
+        """Release device + pipeline with a hard timeout.
+
+        depthai's ``device.close()`` can block indefinitely when the device
+        is in a crashed/wedged state (e.g. after a failed NN build on a
+        Myriad-X). We run it on a background thread and time out after 3s,
+        leaking the handle if necessary — the OS reclaims XLink on process
+        exit, and a wedged device will recover on the next successful boot.
+        """
+        device = self._device
+        pipeline = getattr(self, "_pipeline", None)
+        self._device = None
+        self._pipeline = None
         self._q_rgb = None
         self._q_depth = None
         self._q_nn = None
         self._connected = False
+
+        if device is None and pipeline is None:
+            return
+
+        def _do_close():
+            if pipeline is not None:
+                try:
+                    pipeline.stop()
+                except Exception:
+                    pass
+            if device is not None:
+                try:
+                    device.close()
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_do_close, daemon=True, name="oak-disconnect")
+        t.start()
+        t.join(timeout=3.0)
+        if t.is_alive():
+            logger.warning(
+                "OAK-D close() did not return within 3s — abandoning handle. "
+                "This is usually caused by a prior device crash; a process "
+                "restart will fully recover it."
+            )
+        else:
+            logger.info("OAK-D device closed (XLink released)")
 
     def _live_loop(self) -> None:
         """Acquisition loop for a real OAK-D camera with auto-reconnect."""
@@ -471,12 +804,21 @@ class OakDriver:
 
             try:
                 while self._running and self._connected:
-                    t0 = time.time()
-
-                    in_rgb = self._q_rgb.tryGet()
+                    # Block on the RGB queue — the thread parks cheaply
+                    # and wakes the instant a new encoded frame arrives.
+                    # This removes the time.sleep(0.001) polling loop,
+                    # which on Windows was actually sleeping ~15 ms per
+                    # miss (default scheduler timer resolution), capping
+                    # effective throughput around 27-28 FPS instead of
+                    # the camera's true 30. Use a short timeout so the
+                    # loop can still check self._running periodically.
+                    try:
+                        in_rgb = self._q_rgb.get()  # blocking
+                    except Exception:
+                        in_rgb = None
                     if in_rgb is None:
-                        time.sleep(0.001)
                         continue
+                    t0 = time.time()
 
                     # MJPEG-encoded: use hardware JPEG directly, skip CPU decode
                     if self._encoded_rgb:
@@ -486,30 +828,61 @@ class OakDriver:
                         rgb_frame = in_rgb.getCvFrame()
                         jpeg_bytes = self._encode_jpeg(rgb_frame)
 
+                    # Depth: only process on host at most ~4 Hz. We
+                    # drain the queue to keep it fresh (non-blocking,
+                    # maxSize=1 drops older frames at the device edge)
+                    # but we skip the expensive astype+clip on most
+                    # ticks. Nothing in the hot path needs full-rate
+                    # host depth — the NN consumes it on-device for
+                    # spatial coords, and the /api/camera/depthimage
+                    # endpoint is happy with ~4 Hz.
                     depth_frame = None
                     if self._q_depth is not None:
                         in_depth = self._q_depth.tryGet()
                         if in_depth is not None:
-                            raw = in_depth.getFrame().astype(np.float32)
-                            depth_frame = np.clip(
-                                raw / 1000.0,
-                                self.config.min_depth_m,
-                                self.config.max_depth_m,
-                            )
+                            now_d = time.time()
+                            if (now_d - getattr(self, "_last_depth_host_t", 0.0)) >= 0.25:
+                                raw = in_depth.getFrame().astype(np.float32)
+                                depth_frame = np.clip(
+                                    raw / 1000.0,
+                                    self.config.min_depth_m,
+                                    self.config.max_depth_m,
+                                )
+                                self._last_depth_host_t = now_d
 
                     # ── Parse NN detections ──────────────────────
+                    # This queue is decoupled from the RGB encoder —
+                    # new NN packets arrive at the inference rate, not
+                    # the camera rate. We track their arrival cadence
+                    # as a separate FPS so the HUD can show "NN 25 FPS"
+                    # while the camera feed runs at a full 30 FPS.
                     detections: list[Detection] = []
                     if self._q_nn is not None:
                         in_nn = self._q_nn.tryGet()
                         if in_nn is not None:
+                            nn_now = time.time()
+                            self._nn_fps_window.append(nn_now)
+                            if len(self._nn_fps_window) > 30:
+                                self._nn_fps_window = self._nn_fps_window[-30:]
+                            if len(self._nn_fps_window) >= 2:
+                                span = self._nn_fps_window[-1] - self._nn_fps_window[0]
+                                if span > 0:
+                                    self._nn_fps = (len(self._nn_fps_window) - 1) / span
                             for det in in_nn.detections:
                                 label_id = det.label
                                 labels = self._nn_labels
-                                label_str = (
+                                raw_label = (
                                     labels[label_id]
                                     if 0 <= label_id < len(labels)
                                     else f"class_{label_id}"
                                 )
+                                # Drop everything that isn't a person or
+                                # vehicle (see _SAFETY_LABELS docstring).
+                                # Once GridFront-v1 ships with site-specific
+                                # classes this filter goes away.
+                                label_str = _SAFETY_LABELS.get(raw_label)
+                                if label_str is None:
+                                    continue
                                 sc = det.spatialCoordinates
                                 detections.append(
                                     Detection(
@@ -527,12 +900,25 @@ class OakDriver:
 
                     # ── Read IMU rotation ───────────────────────
                     imu_data = None
+                    imu_quat = None
                     if self._q_imu is not None:
                         imu_packet = self._q_imu.tryGet()
                         if imu_packet is not None:
                             for imu_report in imu_packet.packets:
                                 rv = imu_report.rotationVector
                                 qx, qy, qz, qw = rv.i, rv.j, rv.k, rv.real
+                                # BNO085 reports orientation confidence as
+                                # an angular uncertainty in radians. Field
+                                # name varies across depthai versions, so
+                                # try a couple of attributes.
+                                accuracy_rad = None
+                                for attr in ("rotationVectorAccuracy", "accuracy"):
+                                    if hasattr(rv, attr):
+                                        try:
+                                            accuracy_rad = float(getattr(rv, attr))
+                                        except Exception:
+                                            accuracy_rad = None
+                                        break
                                 # Quaternion to euler (pitch/roll/yaw)
                                 sinr = 2.0 * (qw * qx + qy * qz)
                                 cosr = 1.0 - 2.0 * (qx * qx + qy * qy)
@@ -543,20 +929,35 @@ class OakDriver:
                                 cosy = 1.0 - 2.0 * (qy * qy + qz * qz)
                                 yaw = math.atan2(siny, cosy)
                                 imu_data = {
-                                    "qx": round(qx, 4), "qy": round(qy, 4),
-                                    "qz": round(qz, 4), "qw": round(qw, 4),
+                                    "qx": round(qx, 6), "qy": round(qy, 6),
+                                    "qz": round(qz, 6), "qw": round(qw, 6),
                                     "pitch": round(pitch, 4),
                                     "roll": round(roll, 4),
                                     "yaw": round(yaw, 4),
+                                    "accuracy_rad": accuracy_rad,
+                                    "timestamp": time.time(),
                                 }
+                                imu_quat = (qx, qy, qz, qw)
 
                     with self._lock:
                         self._rgb = rgb_frame
-                        self._depth = depth_frame
+                        # Only overwrite cached depth when we actually
+                        # produced a new one on this tick — most ticks
+                        # we skip the expensive clip to stay fast.
+                        if depth_frame is not None:
+                            self._depth = depth_frame
                         self._detections = detections
                         self._jpeg = jpeg_bytes
                         if imu_data is not None:
                             self._imu_rotation = imu_data
+                            if imu_quat is not None:
+                                t_imu = imu_data["timestamp"]
+                                self._imu_history.append((t_imu, imu_quat))
+                                # Keep only the last 3 seconds
+                                cutoff = t_imu - 3.0
+                                self._imu_history = [
+                                    e for e in self._imu_history if e[0] >= cutoff
+                                ]
                         self._last_frame_time = time.time()
                         self._frame_count += 1
 

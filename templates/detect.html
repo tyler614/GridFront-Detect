@@ -54,12 +54,19 @@
     .btn-icon svg { width: 18px; height: 18px; }
 
     /* ── Panels ──────────────────────────────────────── */
+    /* Layout:
+         ┌───────────────┬──────────┐
+         │   CAMERA      │   CAB    │   ← top half
+         ├───────────────┴──────────┤
+         │      SPATIAL VIEW        │   ← bottom half
+         └──────────────────────────┘                      */
     .panels { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .panels-top { flex: 1 1 50%; display: flex; flex-direction: row; min-height: 0; border-bottom: 1px solid #222; }
 
     .camera-panel {
-        flex: 1 1 50%; position: relative;
+        flex: 2 1 0; position: relative;
         background: #0a0a0a; overflow: hidden;
-        border-bottom: 1px solid #222;
+        border-right: 1px solid #222;
     }
     .camera-panel img { width: 100%; height: 100%; object-fit: contain; }
     .camera-panel canvas.debug-overlay {
@@ -80,10 +87,59 @@
     }
     .scene-panel canvas { display: block; }
 
+    /* ── Cab display mockup ─────────────────────────── */
+    /* Physical target: MaTouch ESP32-S3 1.8" round AMOLED (FT3168).
+       The panel centers a circular OLED-style mockup that we'll drive
+       with the same detection stream the spatial view uses. */
+    .cab-panel {
+        flex: 1 1 0; position: relative;
+        background: #0a0a0a; overflow: hidden;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .cab-panel .cab-display-frame { width: min(72%, 320px); }
+    .cab-display-frame {
+        position: relative;
+        width: min(78%, 380px);
+        aspect-ratio: 1 / 1;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #1a1a1a 0%, #060606 55%, #000 100%);
+        box-shadow:
+            0 0 0 6px #1a1a1a,      /* inner bezel */
+            0 0 0 8px #2a2a2a,      /* outer bezel */
+            0 0 0 14px #0d0d0d,     /* PCB edge */
+            0 18px 38px rgba(0,0,0,0.8),
+            inset 0 0 30px rgba(255,255,255,0.03);
+    }
+    .cab-display-frame::before {
+        /* Subtle glass reflection */
+        content: '';
+        position: absolute;
+        inset: 4%;
+        border-radius: 50%;
+        background: linear-gradient(155deg,
+            rgba(255,255,255,0.08) 0%,
+            rgba(255,255,255,0.02) 30%,
+            transparent 55%);
+        pointer-events: none;
+        z-index: 3;
+    }
+    .cab-display-svg {
+        position: absolute; inset: 4%;
+        width: 92%; height: 92%;
+        border-radius: 50%;
+        background: #000;
+        z-index: 1;
+    }
+    .cab-spec-label {
+        position: absolute; bottom: 14px; left: 0; right: 0;
+        text-align: center; font-size: 10px; color: #555;
+        letter-spacing: 1px; text-transform: uppercase;
+    }
+
     /* ── Settings overlay ───────────────────────────── */
     .settings-overlay {
         display: none; position: fixed; inset: 0;
-        background: rgba(0,0,0,0.85); z-index: 100;
+        background: rgba(0,0,0,0.85); z-index: 600;
         overflow-y: auto; -webkit-overflow-scrolling: touch;
     }
     .settings-overlay.open { display: block; }
@@ -177,6 +233,142 @@
     }
     .model-card.pending .model-restart-note { display: block; }
 
+    /* Camera status overlay */
+    .cam-status-overlay {
+        position: absolute; inset: 0;
+        display: none; align-items: center; justify-content: center;
+        flex-direction: column; gap: 14px;
+        background: rgba(0,0,0,0.82); backdrop-filter: blur(4px);
+        color: #eee; text-align: center; padding: 24px;
+        z-index: 20; pointer-events: auto;
+    }
+    .cam-status-overlay.visible { display: flex; }
+    .cam-status-overlay .cs-icon {
+        width: 44px; height: 44px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 24px; font-weight: 700;
+    }
+    .cam-status-overlay.state-connecting .cs-icon,
+    .cam-status-overlay.state-restarting .cs-icon {
+        border: 3px solid #333; border-top-color: #60a5fa;
+        animation: cs-spin 0.9s linear infinite;
+    }
+    .cam-status-overlay.state-error .cs-icon { background: #7f1d1d; color: #fecaca; }
+    .cam-status-overlay.state-error .cs-icon::before { content: '!'; }
+    .cam-status-overlay.state-no_camera .cs-icon { background: #333; color: #888; }
+    .cam-status-overlay.state-no_camera .cs-icon::before { content: '—'; }
+    @keyframes cs-spin { to { transform: rotate(360deg); } }
+    .cs-title { font-size: 15px; font-weight: 600; letter-spacing: 0.3px; }
+    .cs-message { font-size: 12px; color: #aaa; max-width: 340px; line-height: 1.5; }
+    .cs-hint {
+        font-size: 11px; color: #60a5fa; cursor: pointer;
+        padding: 6px 12px; border: 1px solid #3b82f6; border-radius: 6px;
+        background: rgba(59,130,246,0.1);
+    }
+    .cs-hint:hover { background: rgba(59,130,246,0.2); }
+
+    /* Safety alarm banner — fires when a camera is bumped or IMU is lost.
+       This is the fail-loud visual: we never silently degrade a zone. */
+    .safety-banner {
+        position: fixed; top: 0; left: 0; right: 0;
+        background: linear-gradient(180deg, #b91c1c 0%, #7f1d1d 100%);
+        color: #fff;
+        padding: 14px 20px;
+        display: none;
+        z-index: 500;
+        text-align: center;
+        font-weight: 700;
+        font-size: 15px;
+        letter-spacing: 0.3px;
+        box-shadow: 0 4px 20px rgba(185,28,28,0.5);
+        animation: safety-pulse 1.2s ease-in-out infinite;
+    }
+    .safety-banner.visible { display: block; }
+    .safety-banner .sb-sub {
+        display: block;
+        font-weight: 400;
+        font-size: 12px;
+        color: #fecaca;
+        margin-top: 4px;
+        letter-spacing: 0.2px;
+    }
+    .safety-banner .sb-btn {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 8px 18px;
+        border-radius: 6px;
+        background: #fff;
+        color: #7f1d1d;
+        font-weight: 700;
+        font-size: 13px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    .safety-banner .sb-btn:hover { background: #fef2f2; }
+    .safety-banner .sb-btn:disabled {
+        opacity: 0.6; cursor: default;
+        background: #fca5a5; color: #7f1d1d;
+    }
+    .safety-banner .sb-btn-row {
+        display: flex; gap: 8px; justify-content: center;
+        align-items: center; margin-top: 10px;
+    }
+    .safety-banner .sb-btn-secondary {
+        background: transparent; color: #fff;
+        border: 1px solid rgba(255,255,255,0.5);
+    }
+    .safety-banner .sb-btn-secondary:hover {
+        background: rgba(255,255,255,0.1);
+    }
+    .safety-banner .sb-status {
+        font-size: 11px; color: #fecaca; margin-top: 6px;
+        font-weight: 400; min-height: 14px;
+    }
+    @keyframes safety-pulse {
+        0%, 100% { background: linear-gradient(180deg, #b91c1c 0%, #7f1d1d 100%); }
+        50% { background: linear-gradient(180deg, #dc2626 0%, #991b1b 100%); }
+    }
+
+    /* Connection pill in status bar */
+    .status-pill.pill-conn-ok { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .status-pill.pill-conn-wait { background: rgba(96,165,250,0.15); color: #60a5fa; }
+    .status-pill.pill-conn-err { background: rgba(239,68,68,0.15); color: #f87171; }
+
+    /* Model switch confirmation modal */
+    .confirm-modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+        display: none; align-items: center; justify-content: center;
+        z-index: 200; backdrop-filter: blur(3px);
+    }
+    .confirm-modal-backdrop.visible { display: flex; }
+    .confirm-modal {
+        background: #141414; border: 1px solid #333; border-radius: 12px;
+        padding: 24px 28px; max-width: 440px; width: calc(100% - 48px);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    }
+    .confirm-modal h3 { margin: 0 0 10px 0; font-size: 17px; color: #eee; }
+    .confirm-modal p { margin: 0 0 6px 0; font-size: 13px; color: #aaa; line-height: 1.5; }
+    .confirm-modal .model-target {
+        margin: 14px 0; padding: 10px 14px;
+        background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px;
+    }
+    .confirm-modal .model-target-name { font-size: 14px; color: #eee; font-weight: 600; }
+    .confirm-modal .model-target-desc { font-size: 11px; color: #777; margin-top: 2px; }
+    .confirm-modal-actions {
+        display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px;
+    }
+    .btn-secondary, .btn-primary {
+        padding: 8px 18px; border-radius: 7px; font-size: 13px; font-weight: 500;
+        cursor: pointer; border: 1px solid transparent;
+    }
+    .btn-secondary { background: #1a1a1a; border-color: #333; color: #ccc; }
+    .btn-secondary:hover { background: #252525; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-primary:hover { background: #3b82f6; }
+
     /* Category tabs + search */
     .class-toolbar {
         display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
@@ -212,9 +404,13 @@
             <div class="status-pill pill-clear" id="zone-pill">
                 <span id="zone-text">CLEAR</span>
             </div>
+            <div class="status-pill pill-conn-wait" id="conn-pill" title="Camera connection">
+                <span id="conn-text">CONNECTING</span>
+            </div>
         </div>
         <div class="status-right">
-            <div class="stat"><span>FPS</span> <b id="hud-fps">0</b></div>
+            <div class="stat"><span>Camera</span> <b id="hud-fps">0</b></div>
+            <div class="stat"><span>NN</span> <b id="hud-nn-fps">0</b></div>
             <div class="stat"><span>Nearest</span> <b id="hud-nearest">--</b></div>
             <div class="stat"><span>Objects</span> <b id="hud-count">0</b></div>
             <button class="btn-icon" onclick="toggleSettings()" title="Settings">
@@ -226,14 +422,94 @@
         </div>
     </div>
 
+    <div class="safety-banner" id="safety-banner">
+        <span id="safety-banner-title">CAMERA BUMPED — RECALIBRATE BEFORE RESUMING</span>
+        <span class="sb-sub" id="safety-banner-sub"></span>
+        <div class="sb-btn-row">
+            <button type="button" class="sb-btn" id="sb-recalibrate">Recalibrate now</button>
+            <button type="button" class="sb-btn sb-btn-secondary" id="sb-open-settings">Open settings</button>
+        </div>
+        <div class="sb-status" id="sb-status"></div>
+    </div>
+
     <div class="panels">
+      <div class="panels-top">
         <div class="camera-panel" id="camera-panel">
             <div class="panel-label">CAMERA FEED</div>
             <img id="camera-feed" alt="Camera feed">
             <canvas class="debug-overlay" id="debug-canvas"></canvas>
+            <div class="cam-status-overlay" id="cam-status-overlay">
+                <div class="cs-icon"></div>
+                <div class="cs-title" id="cs-title">Connecting to camera…</div>
+                <div class="cs-message" id="cs-message"></div>
+                <div class="cs-hint" id="cs-hint" style="display:none;" onclick="toggleSettings()">Open Settings</div>
+            </div>
         </div>
-        <div class="scene-panel" id="scene-panel">
-            <div class="panel-label" style="color:#999; background:rgba(255,255,255,0.7);">SPATIAL VIEW</div>
+        <div class="cab-panel" id="cab-panel">
+            <div class="panel-label">CAB DISPLAY · 1.8" AMOLED</div>
+            <div class="cab-display-frame">
+                <svg class="cab-display-svg" id="cab-display" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <radialGradient id="cab-safe-fill" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%"  stop-color="#0b1f12" stop-opacity="0"/>
+                            <stop offset="85%" stop-color="#0b1f12" stop-opacity="0.4"/>
+                            <stop offset="100%" stop-color="#0b1f12" stop-opacity="0.7"/>
+                        </radialGradient>
+                        <filter id="cab-glow" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+                            <feMerge>
+                                <feMergeNode in="blur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                    </defs>
+
+                    <!-- Black background disc -->
+                    <circle cx="100" cy="100" r="95" fill="#050505"/>
+
+                    <!-- Single neutral outer ring — represents 20 m radius. -->
+                    <circle cx="100" cy="100" r="95" fill="none" stroke="#3a3a3a" stroke-width="1.5"/>
+
+                    <!-- Cardinal tick marks -->
+                    <g stroke="#444" stroke-width="1">
+                        <line x1="100" y1="5"  x2="100" y2="12"/>
+                        <line x1="100" y1="188" x2="100" y2="195"/>
+                        <line x1="5"   y1="100" x2="12"  y2="100"/>
+                        <line x1="188" y1="100" x2="195" y2="100"/>
+                    </g>
+
+                    <!-- Machine silhouette (top-down) in the middle -->
+                    <g id="cab-machine">
+                        <rect x="88" y="82" width="24" height="36" rx="3" fill="#333" stroke="#666" stroke-width="1"/>
+                        <rect x="92" y="88" width="16" height="12" rx="1" fill="#1a1a1a" stroke="#555" stroke-width="0.5"/>
+                        <!-- Front indicator chevron — small marker just above the chassis -->
+                        <polygon points="100,78 97,82 103,82" fill="#60a5fa" opacity="0.7"/>
+                    </g>
+
+                    <!-- Live detections — populated by updateCabDisplay() from SSE. -->
+                    <g id="cab-detections"></g>
+                </svg>
+            </div>
+        </div>
+      </div><!-- /.panels-top -->
+      <div class="scene-panel" id="scene-panel">
+          <div class="panel-label" style="color:#999; background:rgba(255,255,255,0.7);">SPATIAL VIEW</div>
+      </div>
+    </div>
+</div>
+
+<!-- Model switch confirmation modal -->
+<div class="confirm-modal-backdrop" id="model-confirm-modal">
+    <div class="confirm-modal">
+        <h3>Switch detection model?</h3>
+        <p>The camera will disconnect and reload with the new model. Detection will pause for roughly 10–30 seconds while the new model downloads and boots on the device.</p>
+        <div class="model-target">
+            <div class="model-target-name" id="confirm-model-name"></div>
+            <div class="model-target-desc" id="confirm-model-desc"></div>
+        </div>
+        <div class="confirm-modal-actions">
+            <button class="btn-secondary" onclick="cancelModelSwitch()">Cancel</button>
+            <button class="btn-primary" onclick="confirmModelSwitch()">Switch &amp; Reboot Camera</button>
         </div>
     </div>
 </div>
@@ -263,6 +539,30 @@
             </div>
         </div>
         <div class="settings-section">
+            <h2>Units</h2>
+            <p>How distances are shown on the cab display and HUD. Persists across reloads.</p>
+            <div style="display:flex; gap:8px;">
+                <div class="detection-item units-toggle" data-units="m" onclick="setUnits('m')" style="max-width:160px;">
+                    <div class="detection-check">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <div class="detection-info">
+                        <div class="detection-name" style="color:#60a5fa;">Meters</div>
+                        <div class="detection-meta">e.g. 3.4 m</div>
+                    </div>
+                </div>
+                <div class="detection-item units-toggle" data-units="ft" onclick="setUnits('ft')" style="max-width:160px;">
+                    <div class="detection-check">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <div class="detection-info">
+                        <div class="detection-name" style="color:#60a5fa;">Feet</div>
+                        <div class="detection-meta">e.g. 11.2 ft</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
             <h2>Detection Models</h2>
             <p>Select the active model. Each model runs on the camera's VPU — only one can be active at a time.</p>
             <div id="model-list"></div>
@@ -273,8 +573,18 @@
             <div id="detection-section"></div>
         </div>
         <div class="settings-section">
-            <h2>Camera</h2>
-            <div style="display:flex; gap:16px;">
+            <h2>Cameras</h2>
+            <p>
+                Magnetically mount each camera and aim it. When the FOV looks
+                right, hit <b>Calibrate</b> to lock in the orientation. The
+                system then watches the camera's IMU for bumps — if it shifts
+                more than the threshold, the zone is flagged unsafe and the
+                operator is alerted in red.
+            </p>
+            <div id="cameras-list" style="display:flex; flex-direction:column; gap:10px;">
+                <div style="font-size:12px; color:#777;">Loading cameras…</div>
+            </div>
+            <div style="margin-top:16px; display:flex; gap:16px;">
                 <label style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:#999;">
                     IR Mode
                     <select id="set-ir-mode" style="padding:6px 8px; background:#1a1a1a; border:1px solid #333; border-radius:6px; color:#ccc; font-size:13px;">
@@ -386,31 +696,60 @@ function renderModelList() {
             '</div>' +
             '<div class="model-desc">' + (model.description || '') + '</div>' +
             '<div class="model-classes">' + classesHtml + '</div>' +
-            '<div class="model-restart-note">Restart server to apply</div>';
+            '<div class="model-restart-note">Reconnecting camera…</div>';
         card.setAttribute('data-model-id', model.id);
         card.addEventListener('click', function(e) {
             e.stopPropagation();
             if (model.id === activeModelId) return;
-            fetch('/api/models/active', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ model_id: model.id })
-            }).then(function(r) { return r.json(); }).then(function(data) {
-                if (data.status === 'ok') {
-                    pendingModelId = model.id;
-                    // Update classes to show the new model's classes
-                    var m = availableModels.find(function(x) { return x.id === model.id; });
-                    DETECTION_CLASSES = buildClassesFromModel(m);
-                    DETECTION_CLASSES.forEach(function(c) {
-                        if (activeDetections[c.id] === undefined) activeDetections[c.id] = true;
-                    });
-                    renderModelList();
-                    renderDetectionGrid();
-                }
-            }).catch(function(err) { console.error('Model switch failed:', err); });
+            requestModelSwitch(model);
         });
         container.appendChild(card);
     });
+}
+
+// ── Model-switch confirmation flow ─────────────────────────
+var pendingSwitchModel = null;
+function requestModelSwitch(model) {
+    pendingSwitchModel = model;
+    document.getElementById('confirm-model-name').textContent = model.name;
+    document.getElementById('confirm-model-desc').textContent = model.description || '';
+    document.getElementById('model-confirm-modal').classList.add('visible');
+}
+function cancelModelSwitch() {
+    pendingSwitchModel = null;
+    document.getElementById('model-confirm-modal').classList.remove('visible');
+}
+function confirmModelSwitch() {
+    var model = pendingSwitchModel;
+    document.getElementById('model-confirm-modal').classList.remove('visible');
+    if (!model) return;
+    pendingModelId = model.id;
+    // Update local classes immediately so UI reflects the new model's vocabulary
+    DETECTION_CLASSES = buildClassesFromModel(model);
+    DETECTION_CLASSES.forEach(function(c) {
+        if (activeDetections[c.id] === undefined) activeDetections[c.id] = true;
+    });
+    renderModelList();
+    renderDetectionGrid();
+    // Flip the overlay into restarting state immediately so there's no gap
+    setCameraStatus({
+        state: 'restarting',
+        model: model.id,
+        model_name: model.name,
+        message: 'Switching model to ' + model.name + '…',
+    });
+    fetch('/api/models/active', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ model_id: model.id })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.status !== 'restarting' && data.status !== 'ok') {
+            console.error('Model switch response unexpected:', data);
+        }
+    }).catch(function(err) {
+        console.error('Model switch failed:', err);
+    });
+    pendingSwitchModel = null;
 }
 
 // ── Detection class grid with tabs + search ───────────────
@@ -507,7 +846,184 @@ function toggleAllDetections() {
 function toggleSettings() {
     var o = document.getElementById('settings-overlay');
     o.classList.toggle('open');
-    if (o.classList.contains('open')) { renderModelList(); renderDetectionGrid(); }
+    if (o.classList.contains('open')) {
+        renderModelList();
+        renderDetectionGrid();
+        loadCameras();
+    } else {
+        stopCameraPolling();
+    }
+}
+
+// ── Cameras panel (magnetic mount + calibrate) ─────────────
+var _camerasPollTimer = null;
+
+function _calStateColor(state) {
+    switch (state) {
+        case 'nominal': return '#22c55e';
+        case 'warn':    return '#f59e0b';
+        case 'bumped':
+        case 'imu_lost': return '#ef4444';
+        default: return '#6b7280';
+    }
+}
+
+function _calStateLabel(state) {
+    switch (state) {
+        case 'nominal': return 'OK';
+        case 'warn': return 'DRIFT';
+        case 'bumped': return 'BUMPED';
+        case 'imu_lost': return 'IMU LOST';
+        case 'uncalibrated': return 'Not calibrated';
+        default: return state || 'Unknown';
+    }
+}
+
+function stopCameraPolling() {
+    if (_camerasPollTimer) { clearInterval(_camerasPollTimer); _camerasPollTimer = null; }
+}
+
+function loadCameras() {
+    fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
+        var cams = cfg.installed_cameras || [];
+        var container = document.getElementById('cameras-list');
+        if (!container) return;
+        if (!cams.length) {
+            container.innerHTML =
+                '<div style="font-size:12px; color:#777;">' +
+                'No cameras installed. Connect an OAK-D Pro W PoE camera to the ' +
+                'machine network and it will appear here.' +
+                '</div>';
+            return;
+        }
+        container.innerHTML = cams.map(function(cam) {
+            var id = cam.id;
+            return (
+                '<div id="cam-row-' + id + '" ' +
+                     'style="padding:12px 14px; background:#141414; border:1px solid #2a2a2a; border-radius:8px; display:flex; flex-direction:column; gap:8px;">' +
+                    '<div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">' +
+                        '<div>' +
+                            '<div style="font-size:14px; font-weight:600; color:#eee; display:flex; align-items:center; gap:8px;">' +
+                                '<span id="cam-dot-' + id + '" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#6b7280;"></span>' +
+                                (cam.label || id) +
+                            '</div>' +
+                            '<div style="font-size:11px; color:#777; margin-top:2px;">' +
+                                (cam.device_id || 'no device') +
+                                ' · pos [' + (cam.position_m || [0,0,0]).join(', ') + ']' +
+                                ' · yaw ' + (cam.yaw_deg || 0) + '°' +
+                                ' · HFOV ' + (cam.hfov_deg || 127) + '°' +
+                            '</div>' +
+                        '</div>' +
+                        '<button class="btn-primary" id="cam-cal-btn-' + id + '" ' +
+                                'onclick="startCalibrate(\'' + id + '\')" ' +
+                                'style="padding:8px 16px; font-size:12px; font-weight:600;">Calibrate</button>' +
+                    '</div>' +
+                    '<div id="cam-status-' + id + '" style="font-size:11px; color:#888;">—</div>' +
+                '</div>'
+            );
+        }).join('');
+        stopCameraPolling();
+        _camerasPollTimer = setInterval(pollCameraStatuses, 500);
+        pollCameraStatuses();
+    });
+}
+
+function pollCameraStatuses() {
+    fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
+        var cams = cfg.installed_cameras || [];
+        cams.forEach(function(cam) {
+            fetch('/api/cameras/' + cam.id + '/calibration_status')
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(s) {
+                    if (!s) return;
+                    var dot = document.getElementById('cam-dot-' + cam.id);
+                    var statusEl = document.getElementById('cam-status-' + cam.id);
+                    if (dot) dot.style.background = _calStateColor(s.state);
+                    if (!statusEl) return;
+                    var lines = [];
+                    lines.push('State: <b style="color:' + _calStateColor(s.state) + '">' + _calStateLabel(s.state) + '</b>');
+                    if (s.calibrated_at) {
+                        var when = new Date(s.calibrated_at).toLocaleString();
+                        lines.push('Calibrated ' + when);
+                    }
+                    if (s.current_delta_deg !== null && s.current_delta_deg !== undefined) {
+                        lines.push('Drift ' + Number(s.current_delta_deg).toFixed(2) + '° / threshold ' + s.bump_threshold_deg + '°');
+                    }
+                    if (!s.imu_present) {
+                        lines.push('<span style="color:#ef4444">No IMU data</span>');
+                    } else if (s.stability && !s.stability.stable && s.stability.reason) {
+                        lines.push('<span style="color:#999">' + s.stability.reason + '</span>');
+                    }
+                    statusEl.innerHTML = lines.join(' &nbsp;·&nbsp; ');
+                }).catch(function() {});
+        });
+    }).catch(function() {});
+}
+
+function startCalibrate(camId) {
+    var btn = document.getElementById('cam-cal-btn-' + camId);
+    var statusEl = document.getElementById('cam-status-' + camId);
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = 'Hold still…';
+    var canceled = false;
+    btn.onclick = function() { canceled = true; };
+
+    var attempts = 0;
+    function tick() {
+        if (canceled) {
+            btn.textContent = 'Calibrate';
+            btn.disabled = false;
+            btn.onclick = function() { startCalibrate(camId); };
+            return;
+        }
+        if (attempts++ > 60) {
+            btn.textContent = 'Timed out';
+            btn.disabled = false;
+            btn.onclick = function() { startCalibrate(camId); };
+            if (statusEl) {
+                statusEl.innerHTML = '<span style="color:#f59e0b">Camera never settled — check mount</span>';
+            }
+            return;
+        }
+        fetch('/api/cameras/' + camId + '/calibration_status')
+            .then(function(r) { return r.json(); })
+            .then(function(s) {
+                if (statusEl && s.stability && s.stability.reason) {
+                    statusEl.innerHTML = '<span style="color:#999">' + s.stability.reason + '</span>';
+                }
+                if (s.stability && s.stability.stable) {
+                    btn.textContent = 'Locking…';
+                    return fetch('/api/cameras/' + camId + '/calibrate', { method: 'POST' })
+                        .then(function(r) { return r.json(); })
+                        .then(function(res) {
+                            if (res.ok) {
+                                btn.textContent = 'Locked ✓';
+                                if (window.reloadCoverage) window.reloadCoverage();
+                                setTimeout(function() {
+                                    btn.textContent = 'Calibrate';
+                                    btn.disabled = false;
+                                    btn.onclick = function() { startCalibrate(camId); };
+                                }, 1200);
+                            } else {
+                                btn.textContent = 'Failed';
+                                if (statusEl) {
+                                    statusEl.innerHTML = '<span style="color:#ef4444">' +
+                                        (res.reason || 'Calibration refused') + '</span>';
+                                }
+                                setTimeout(function() {
+                                    btn.textContent = 'Calibrate';
+                                    btn.disabled = false;
+                                    btn.onclick = function() { startCalibrate(camId); };
+                                }, 2000);
+                            }
+                        });
+                } else {
+                    setTimeout(tick, 200);
+                }
+            }).catch(function() { setTimeout(tick, 300); });
+    }
+    tick();
 }
 
 // ── Debug Mode ──────────────────────────────────────────
@@ -524,6 +1040,50 @@ function updateDebugToggle() {
 }
 updateDebugToggle();
 
+// ── Distance units (m vs ft) ─────────────────────────────
+// Persisted in localStorage so the operator's preference survives
+// reloads. Stored as the unit string ('m' or 'ft'); the display layer
+// reads gf_units and formats with formatDist().
+var distUnits = localStorage.getItem('gf_units') || 'm';
+function setUnits(u) {
+    if (u !== 'm' && u !== 'ft') return;
+    distUnits = u;
+    localStorage.setItem('gf_units', u);
+    updateUnitsToggle();
+    // Force a redraw of HUD + cab dots so the change is instant.
+    if (typeof currentDetections !== 'undefined') {
+        updateCabDisplay(currentDetections);
+    }
+    var nearestEl = document.getElementById('hud-nearest');
+    if (nearestEl && window._lastClosestM != null) {
+        nearestEl.textContent = formatDist(window._lastClosestM);
+    }
+}
+function updateUnitsToggle() {
+    var nodes = document.querySelectorAll('.units-toggle');
+    nodes.forEach(function(n) {
+        if (n.getAttribute('data-units') === distUnits) n.classList.add('active');
+        else n.classList.remove('active');
+    });
+}
+function formatDist(m) {
+    // Distance-aware precision. OAK-D Pro W stereo error grows with
+    // the square of distance (~7.5 cm baseline): sub-decimetre under
+    // ~3 m, tens of cm by 5-8 m, half a metre or worse past 8 m.
+    // Showing "11.2 ft" at the edge of the 12 m ring is dishonest —
+    // the sensor can't back that decimal up. So: decimal under 8 m,
+    // whole units beyond.
+    if (m == null || isNaN(m)) return '--';
+    if (distUnits === 'ft') {
+        var ft = m * 3.28084;
+        if (m < 8) return ft.toFixed(1) + 'ft';
+        return Math.round(ft) + 'ft';
+    }
+    if (m < 8) return m.toFixed(1) + 'm';
+    return Math.round(m) + 'm';
+}
+updateUnitsToggle();
+
 // ── Config ──────────────────────────────────────────────
 var DANGER = 3.5, WARNING = 6.0, MAX_RANGE = 12.0;
 fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
@@ -533,6 +1093,149 @@ fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
         MAX_RANGE = cfg.zones.max_range_m || MAX_RANGE;
     }
 });
+
+// ── Cab display widget — round 1.8" AMOLED preview ────────
+// Single neutral ring at 20 m radius (40 m diameter visible field).
+// No zone shading — flicker-free. Detection dots are persistent SVG
+// nodes keyed by track_id; we update attributes in-place rather than
+// rebuilding every SSE message, which is what was making the dots
+// blink even when the server-side track was steady.
+var CAB_VIEW_PX = 95;          // SVG units from centre to outermost edge
+var CAB_CENTER = 100;          // SVG center in viewBox 0..200
+var CAB_RANGE_M = 12;          // Outer ring radius in metres
+var CAB_LERP = 0.35;           // Render-time lerp toward latest SSE target
+var CAB_DOT_TTL_MS = 1200;     // How long a dot persists after its last update
+
+// Persistent state per track_id
+var cabDots = {};              // tid -> { x, z, lastSeen, nodes:{glow,ring,core} }
+
+function _cabMakeNodes(grp) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var glow = document.createElementNS(ns, 'circle');
+    glow.setAttribute('r', '7');
+    glow.setAttribute('fill', '#7dd3fc');
+    glow.setAttribute('opacity', '0.30');
+    grp.appendChild(glow);
+    var ring = document.createElementNS(ns, 'circle');
+    ring.setAttribute('r', '4.5');
+    ring.setAttribute('fill', '#7dd3fc');
+    ring.setAttribute('filter', 'url(#cab-glow)');
+    grp.appendChild(ring);
+    var core = document.createElementNS(ns, 'circle');
+    core.setAttribute('r', '2');
+    core.setAttribute('fill', '#fff');
+    grp.appendChild(core);
+    // Distance label sits just above the dot. Tiny so it fits inside
+    // the 200x200 SVG without crowding. Stroke gives a thin halo so
+    // it stays legible against the dot or the ring colour.
+    var label = document.createElementNS(ns, 'text');
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('font-size', '8');
+    label.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
+    label.setAttribute('font-weight', '700');
+    label.setAttribute('fill', '#fff');
+    label.setAttribute('stroke', '#000');
+    label.setAttribute('stroke-width', '0.5');
+    label.setAttribute('paint-order', 'stroke');
+    grp.appendChild(label);
+    return { glow: glow, ring: ring, core: core, label: label };
+}
+
+function _cabRemoveNodes(d) {
+    if (!d || !d.nodes) return;
+    [d.nodes.glow, d.nodes.ring, d.nodes.core, d.nodes.label].forEach(function(n) {
+        if (n && n.parentNode) n.parentNode.removeChild(n);
+    });
+    d.nodes = null;
+}
+
+function updateCabDisplay(detections) {
+    var grp = document.getElementById('cab-detections');
+    if (!grp) return;
+    var now = performance.now();
+    var scale = CAB_VIEW_PX / CAB_RANGE_M;
+
+    // Mark which tracks we saw this tick so we can age the rest.
+    var seenThisTick = {};
+
+    detections.forEach(function(det) {
+        var xm = det.x_m || 0;
+        var zm = det.z_m || 0;
+        var tid = det.track_id;
+        if (tid == null) {
+            // Synthetic key for un-tracked detections so they at least
+            // get a stable identity within the same tick.
+            tid = 'u' + det.label + '_' + Math.round(xm * 10) + '_' + Math.round(zm * 10);
+        }
+        seenThisTick[tid] = true;
+
+        var d = cabDots[tid];
+        if (!d) {
+            d = { x: xm, z: zm, lastSeen: now, nodes: _cabMakeNodes(grp) };
+            cabDots[tid] = d;
+        }
+        // Lerp toward the latest server position; server already smooths
+        // so this is purely sub-update visual interpolation.
+        d.x += (xm - d.x) * CAB_LERP;
+        d.z += (zm - d.z) * CAB_LERP;
+        d.lastSeen = now;
+
+        // Polar -> SVG. Forward (+z, away from machine front) is up on
+        // the display, which is -y in SVG.
+        var sx = CAB_CENTER + d.x * scale;
+        var sy = CAB_CENTER - d.z * scale;
+        var dx = sx - CAB_CENTER, dy = sy - CAB_CENTER;
+        var r = Math.sqrt(dx * dx + dy * dy);
+        if (r > CAB_VIEW_PX) {
+            // Beyond the 20 m view: pin to bezel so bearing stays correct.
+            var k = CAB_VIEW_PX / r;
+            sx = CAB_CENTER + dx * k;
+            sy = CAB_CENTER + dy * k;
+        }
+        // Hold opacity at full regardless of coast state. The server
+        // emits coasting:true on any NN-dropped frame, so a track with
+        // a 10 fps NN and a faster SSE tick would otherwise toggle
+        // between 1.0 and 0.55 every few frames — that's the "quick
+        // but frequent" flash. The coast loop already keeps position
+        // continuous, so we don't need a visual distinction here.
+        var op = 1.0;
+        if (d.nodes) {
+            d.nodes.glow.setAttribute('cx', sx.toFixed(1));
+            d.nodes.glow.setAttribute('cy', sy.toFixed(1));
+            d.nodes.glow.setAttribute('opacity', (op * 0.30).toFixed(2));
+            d.nodes.ring.setAttribute('cx', sx.toFixed(1));
+            d.nodes.ring.setAttribute('cy', sy.toFixed(1));
+            d.nodes.ring.setAttribute('opacity', op.toFixed(2));
+            d.nodes.core.setAttribute('cx', sx.toFixed(1));
+            d.nodes.core.setAttribute('cy', sy.toFixed(1));
+            d.nodes.core.setAttribute('opacity', op.toFixed(2));
+            // Distance label — sit it above the dot, but flip below if
+            // the dot is near the top edge so the text stays on-screen.
+            var dm = det.distance_m != null
+                ? det.distance_m
+                : Math.sqrt(d.x * d.x + d.z * d.z);
+            d.nodes.label.textContent = formatDist(dm);
+            var labelY = sy - 8;
+            if (labelY < 10) labelY = sy + 14;
+            d.nodes.label.setAttribute('x', sx.toFixed(1));
+            d.nodes.label.setAttribute('y', labelY.toFixed(1));
+            d.nodes.label.setAttribute('opacity', op.toFixed(2));
+        }
+    });
+
+    // Age out dots we haven't seen recently. We do NOT delete on the
+    // first missing tick — that's where the flicker came from. The
+    // server-side coast loop already keeps tracks alive across NN
+    // dropouts; this TTL is the safety net for when a track is
+    // genuinely gone.
+    for (var tid in cabDots) {
+        if (seenThisTick[tid]) continue;
+        if (now - cabDots[tid].lastSeen > CAB_DOT_TTL_MS) {
+            _cabRemoveNodes(cabDots[tid]);
+            delete cabDots[tid];
+        }
+    }
+}
 
 // ── Shared detection state for debug overlay + 3D scene ──
 var currentDetections = [];
@@ -555,33 +1258,57 @@ function drawDebugBoxes() {
     var dw = imgW * scale, dh = imgH * scale;
     var ox = (pw - dw) / 2, oy = (ph - dh) / 2;
 
+    // Rendered image rect — everything must stay inside it so nothing
+    // bleeds into the letterboxed margins of the camera panel.
+    var imgLeft = ox, imgTop = oy;
+    var imgRight = ox + dw, imgBottom = oy + dh;
+
+    debugCtx.font = '11px -apple-system, system-ui, sans-serif';
+    var LABEL_H = 14;
+
     currentDetections.forEach(function(det) {
         if (!det.bbox) return;
         // Filter by enabled classes
         var classId = det.label || '';
         if (activeDetections[classId] === false) return;
 
-        var x1 = ox + det.bbox[0] * dw;
-        var y1 = oy + det.bbox[1] * dh;
-        var x2 = ox + det.bbox[2] * dw;
-        var y2 = oy + det.bbox[3] * dh;
+        // Clamp bbox to the visible video area
+        var x1 = Math.max(imgLeft,   ox + det.bbox[0] * dw);
+        var y1 = Math.max(imgTop,    oy + det.bbox[1] * dh);
+        var x2 = Math.min(imgRight,  ox + det.bbox[2] * dw);
+        var y2 = Math.min(imgBottom, oy + det.bbox[3] * dh);
         var w = x2 - x1, h = y2 - y1;
+        if (w < 2 || h < 2) return;
 
-        var color = 'rgba(96,165,250,0.8)';
+        var stroke = 'rgba(96,165,250,0.9)';
+        var fill   = 'rgba(96,165,250,0.85)';
 
-        debugCtx.strokeStyle = color;
-        debugCtx.lineWidth = 1;
-        debugCtx.strokeRect(x1, y1, w, h);
+        debugCtx.strokeStyle = stroke;
+        debugCtx.lineWidth = 2;
+        debugCtx.strokeRect(x1 + 0.5, y1 + 0.5, w, h);
 
-        // Label: type + confidence
+        // Label: type + confidence + distance
         var label = (det.label || '?') + ' ' + Math.round((det.confidence || 0) * 100) + '%';
-        if (det.distance_m) label += ' ' + det.distance_m.toFixed(1) + 'm';
-        debugCtx.font = '10px -apple-system, system-ui, sans-serif';
+        if (det.distance_m) label += ' · ' + det.distance_m.toFixed(1) + 'm';
         var tw = debugCtx.measureText(label).width;
-        debugCtx.fillStyle = 'rgba(96,165,250,0.7)';
-        debugCtx.fillRect(x1, y1 - 14, tw + 6, 14);
+        var bw = tw + 8;
+
+        // Decide where the label goes so it stays inside the image rect:
+        //   1) above the box if there's room
+        //   2) otherwise inside the top of the box (flipped down)
+        var labelY = y1 - LABEL_H;
+        var textY  = y1 - 4;
+        if (labelY < imgTop) {
+            labelY = y1;
+            textY  = y1 + LABEL_H - 4;
+        }
+        // Keep label horizontally inside the image too
+        var labelX = Math.min(Math.max(x1, imgLeft), imgRight - bw);
+
+        debugCtx.fillStyle = fill;
+        debugCtx.fillRect(labelX, labelY, bw, LABEL_H);
         debugCtx.fillStyle = '#fff';
-        debugCtx.fillText(label, x1 + 3, y1 - 3);
+        debugCtx.fillText(label, labelX + 4, textY);
     });
 }
 
@@ -600,10 +1327,13 @@ function drawDebugBoxes() {
     var scene = new THREE.Scene();
     scene.fog = new THREE.Fog(0xf2f2f2, 25, 50);
 
-    // ── Camera — third-person, slightly elevated ──────────
+    // ── Camera — high-angle third-person (~55° pitch) ─────
+    // Higher elevation + closer in Z ensures both the front and rear of
+    // the machine remain visible, while preserving some perspective
+    // depth rather than going fully top-down.
     var camera = new THREE.PerspectiveCamera(55, 640 / 300, 0.1, 80);
-    camera.position.set(0, 8, 10);
-    camera.lookAt(0, 0, -5);
+    camera.position.set(0, 14, 8);
+    camera.lookAt(0, 0, -2);
 
     // ── Lighting ──────────────────────────────────────────
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -695,84 +1425,301 @@ function drawDebugBoxes() {
         lSprite.position.set(0, 0.8, -(mL / 2 + 1.0));
         machineGroup.add(lSprite);
 
-        // ── Camera FOV cones ──────────────────────────────
-        var spec = profile.camera_spec || { hfov_deg: 127, max_depth_m: 15 };
-        var hfov = spec.hfov_deg || 127;
-        var maxRange = spec.max_depth_m || 15;
-        var mounts = profile.camera_mounts || [];
-
-        var camColors = {
-            front: 0x4BA3C7,
-            rear: 0x2B6B9E,
-            left: 0x8CC8E0,
-            right: 0x8CC8E0,
-        };
-
-        mounts.forEach(function(mount) {
-            var pos = mount.position;  // [x, y, z] on machine
-            var rot = mount.rotation;  // [rx, ry, rz] in degrees
-            var color = camColors[mount.id] || 0x4BA3C7;
-
-            // FOV cone: triangle fan on the ground plane
-            var halfAngle = (hfov / 2) * Math.PI / 180;
-            var yawRad = (rot[1] || 0) * Math.PI / 180;
-
-            // Build cone shape as a filled sector on the ground
-            var segments = 32;
-            var coneShape = new THREE.Shape();
-            coneShape.moveTo(0, 0);
-            for (var si = 0; si <= segments; si++) {
-                var a = -halfAngle + (si / segments) * 2 * halfAngle;
-                coneShape.lineTo(Math.sin(a) * maxRange, -Math.cos(a) * maxRange);
-            }
-            coneShape.lineTo(0, 0);
-
-            var coneGeo = new THREE.ShapeGeometry(coneShape);
-            var coneMat = new THREE.MeshBasicMaterial({
-                color: color, transparent: true, opacity: 0.08, side: THREE.DoubleSide
-            });
-            var cone = new THREE.Mesh(coneGeo, coneMat);
-            cone.rotation.x = -Math.PI / 2;
-            cone.position.set(pos[0], 0.03, pos[2]);
-            cone.rotation.z = -yawRad;  // Rotate to camera direction
-            fovGroup.add(cone);
-
-            // FOV edge lines
-            var edgeMat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.3 });
-            var leftAngle = yawRad - halfAngle;
-            var rightAngle = yawRad + halfAngle;
-            var edgeGeo = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(pos[0], 0.05, pos[2]),
-                new THREE.Vector3(pos[0] + Math.sin(leftAngle) * maxRange, 0.05, pos[2] - Math.cos(leftAngle) * maxRange),
-            ]);
-            fovGroup.add(new THREE.Line(edgeGeo, edgeMat));
-
-            var edgeGeo2 = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(pos[0], 0.05, pos[2]),
-                new THREE.Vector3(pos[0] + Math.sin(rightAngle) * maxRange, 0.05, pos[2] - Math.cos(rightAngle) * maxRange),
-            ]);
-            fovGroup.add(new THREE.Line(edgeGeo2, edgeMat));
-
-            // Camera mount indicator — small sphere on machine
-            var camDot = new THREE.Mesh(
-                new THREE.SphereGeometry(0.12, 8, 8),
-                new THREE.MeshStandardMaterial({ color: color, roughness: 0.3, metalness: 0.2 })
-            );
-            camDot.position.set(pos[0], 0.65, pos[2]);
-            machineGroup.add(camDot);
-
-            // Camera label
-            var clc = document.createElement('canvas'); clc.width = 128; clc.height = 32;
-            var clctx = clc.getContext('2d');
-            clctx.font = '12px -apple-system, system-ui, sans-serif';
-            clctx.textAlign = 'center'; clctx.fillStyle = '#666';
-            clctx.fillText(mount.label, 64, 20);
-            var clSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(clc), transparent: true }));
-            clSprite.scale.set(1.2, 0.3, 1);
-            clSprite.position.set(pos[0], 1.0, pos[2]);
-            machineGroup.add(clSprite);
-        });
+        // ── Camera FOV cones — driven by /api/coverage ────
+        // Sectors are built from config.installed_cameras (NOT profile
+        // slots) so the spatial view shows exactly which arcs are
+        // monitored. An uncovered ring highlights blind spots so nobody
+        // mistakes this for 360° protection.
+        renderCoverageSectors(MAX_COVERAGE_RADIUS);
     }).catch(function(e) { console.error('Machine profile load failed:', e); });
+
+    // Maximum machine-relative radius to draw the "blind spot" ring at.
+    // Also used as a fallback range when a sector has no explicit range.
+    var MAX_COVERAGE_RADIUS = 15;
+
+    function _clearGroup(group) {
+        while (group.children.length > 0) {
+            var c = group.children[0];
+            group.remove(c);
+            if (c.geometry) c.geometry.dispose();
+            if (c.material) c.material.dispose();
+        }
+    }
+
+    // Per-camera wedge meshes so the SSE handler can recolor them
+    // without rebuilding geometry every frame.
+    var _wedgesByCam = {};
+
+    // Calibration-state palette. Grey means "we don't know where this
+    // camera is pointing" — the installer hasn't calibrated yet. Green
+    // means calibrated and within threshold. Amber = drifting. Red =
+    // bumped — matches the cab display alarm state.
+    var CAL_COLORS = {
+        uncalibrated: 0x9aa0ad,
+        nominal:      0x4BA3C7,
+        warn:         0xE0A84B,
+        bumped:       0xE8453C,
+        imu_lost:     0xE8453C,
+    };
+
+    function _calColorFor(state) {
+        return CAL_COLORS[state] !== undefined ? CAL_COLORS[state] : CAL_COLORS.uncalibrated;
+    }
+
+    function renderCoverageSectors(fallbackRange) {
+        fetch('/api/coverage').then(function(r) { return r.json(); }).then(function(data) {
+            var sectors = (data && data.sectors) || [];
+            _clearGroup(fovGroup);
+            _wedgesByCam = {};
+
+            // Palette only used as a label/dot fallback. Sector fill is
+            // driven entirely by calibration state below.
+            var palette = [0x4BA3C7, 0x2B6B9E, 0x8CC8E0, 0x6FB38E,
+                           0xE0A84B, 0xC76B4B, 0x9A6EC7, 0xC74B9A];
+
+            // Draw a dim "blind" ring at max range to show the full
+            // possible coverage — the green wedges are overlaid on top.
+            var ringGeo = new THREE.RingGeometry(
+                MAX_COVERAGE_RADIUS - 0.15, MAX_COVERAGE_RADIUS, 96
+            );
+            var ringMat = new THREE.MeshBasicMaterial({
+                color: 0xb0b0b0, transparent: true, opacity: 0.35, side: THREE.DoubleSide
+            });
+            var ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.y = 0.02;
+            fovGroup.add(ring);
+
+            if (sectors.length === 0) {
+                // No cameras installed → dim everything to make it obvious
+                return;
+            }
+
+            sectors.forEach(function(sector, idx) {
+                var pos = sector.position_m || [0, 0, 0];
+                var yawDeg = sector.yaw_deg || 0;
+                var hfovDeg = sector.hfov_deg || 127;
+                var range = sector.range_m || fallbackRange || 12;
+                // Initial colour: uncalibrated until the SSE tells us
+                // otherwise. Once a camera is calibrated AND its IMU
+                // delta is within threshold, it flips green.
+                var initialState = sector.calibrated ? 'nominal' : 'uncalibrated';
+                var color = _calColorFor(initialState);
+
+                var halfAngle = (hfovDeg / 2) * Math.PI / 180;
+                var yawRad = yawDeg * Math.PI / 180;
+
+                // Filled wedge on the ground plane
+                var segments = 32;
+                var coneShape = new THREE.Shape();
+                coneShape.moveTo(0, 0);
+                for (var si = 0; si <= segments; si++) {
+                    var a = -halfAngle + (si / segments) * 2 * halfAngle;
+                    coneShape.lineTo(Math.sin(a) * range, -Math.cos(a) * range);
+                }
+                coneShape.lineTo(0, 0);
+
+                var coneGeo = new THREE.ShapeGeometry(coneShape);
+                var coneMat = new THREE.MeshBasicMaterial({
+                    color: color, transparent: true, opacity: 0.14, side: THREE.DoubleSide
+                });
+                var cone = new THREE.Mesh(coneGeo, coneMat);
+                cone.rotation.x = -Math.PI / 2;
+                cone.position.set(pos[0], 0.03, pos[2]);
+                cone.rotation.z = -yawRad;
+                fovGroup.add(cone);
+
+                // Track this wedge's materials so SSE can recolour
+                // without a full re-render.
+                var wedgeRefs = {
+                    coneMat: coneMat,
+                    edgeMats: [],
+                    dotMat: null,
+                    state: initialState,
+                };
+                _wedgesByCam[sector.id] = wedgeRefs;
+
+                // FOV edge lines (brighter than fill)
+                var edgeMat = new THREE.LineBasicMaterial({
+                    color: color, transparent: true, opacity: 0.55
+                });
+                wedgeRefs.edgeMats.push(edgeMat);
+                var leftAngle = yawRad - halfAngle;
+                var rightAngle = yawRad + halfAngle;
+                var edgeGeo = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(pos[0], 0.05, pos[2]),
+                    new THREE.Vector3(
+                        pos[0] + Math.sin(leftAngle) * range,
+                        0.05,
+                        pos[2] - Math.cos(leftAngle) * range
+                    ),
+                ]);
+                fovGroup.add(new THREE.Line(edgeGeo, edgeMat));
+
+                var edgeGeo2 = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(pos[0], 0.05, pos[2]),
+                    new THREE.Vector3(
+                        pos[0] + Math.sin(rightAngle) * range,
+                        0.05,
+                        pos[2] - Math.cos(rightAngle) * range
+                    ),
+                ]);
+                fovGroup.add(new THREE.Line(edgeGeo2, edgeMat));
+
+                // Camera mount dot on the machine body
+                var dotMat = new THREE.MeshStandardMaterial({
+                    color: color, roughness: 0.3, metalness: 0.2
+                });
+                var camDot = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.14, 10, 10),
+                    dotMat
+                );
+                camDot.position.set(pos[0], Math.max(0.65, pos[1] * 0.25 + 0.45), pos[2]);
+                fovGroup.add(camDot);
+                wedgeRefs.dotMat = dotMat;
+
+                // Camera label sprite
+                var clc = document.createElement('canvas');
+                clc.width = 160; clc.height = 36;
+                var clctx = clc.getContext('2d');
+                clctx.font = 'bold 13px -apple-system, system-ui, sans-serif';
+                clctx.textAlign = 'center';
+                clctx.fillStyle = '#4a4a58';
+                clctx.fillText(sector.label || sector.id || 'Camera', 80, 22);
+                var clSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+                    map: new THREE.CanvasTexture(clc), transparent: true
+                }));
+                clSprite.scale.set(1.4, 0.32, 1);
+                clSprite.position.set(pos[0], 1.15, pos[2]);
+                fovGroup.add(clSprite);
+            });
+        }).catch(function(e) { console.error('Coverage fetch failed:', e); });
+    }
+
+    // Full-screen safety banner — any bumped camera anywhere on the
+    // machine lights this up red until it gets recalibrated. Matches
+    // the zone classifier which promotes any detection from the same
+    // camera straight to DANGER. Single source of truth: the server's
+    // safety_state field on every SSE frame.
+    // Track which cameras are currently bumped so the banner's
+    // Recalibrate button knows what to act on.
+    var _bumpedCameraIds = [];
+    window.updateSafetyBanner = function(safetyState, bumpedCameras) {
+        var banner = document.getElementById('safety-banner');
+        var titleEl = document.getElementById('safety-banner-title');
+        var subEl = document.getElementById('safety-banner-sub');
+        if (!banner || !titleEl || !subEl) return;
+        _bumpedCameraIds = bumpedCameras || [];
+        if (safetyState === 'bumped') {
+            banner.classList.add('visible');
+            var cams = _bumpedCameraIds.join(', ');
+            titleEl.textContent = 'CAMERA BUMPED — RECALIBRATE BEFORE RESUMING';
+            subEl.textContent = cams
+                ? 'Affected: ' + cams + ' · Zone geometry is no longer trusted for this camera.'
+                : 'A camera mount has shifted. Zone geometry is no longer trusted.';
+        } else {
+            banner.classList.remove('visible');
+            var btn = document.getElementById('sb-recalibrate');
+            var stat = document.getElementById('sb-status');
+            if (btn) { btn.disabled = false; btn.textContent = 'Recalibrate now'; }
+            if (stat) { stat.textContent = ''; }
+        }
+    };
+
+    // Inline recalibrate flow driven from the full-screen banner. The
+    // banner covers the settings gear so the operator needs a first-
+    // class path straight from the alarm — no hunting through menus
+    // while the safety state is red.
+    function _bannerRecalibrate() {
+        var btn = document.getElementById('sb-recalibrate');
+        var stat = document.getElementById('sb-status');
+        if (!btn || !stat) return;
+        var targets = (_bumpedCameraIds && _bumpedCameraIds.length)
+            ? _bumpedCameraIds.slice() : [];
+        if (!targets.length) {
+            stat.textContent = 'No camera ID reported — open settings for manual calibrate';
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Hold still…';
+        var idx = 0;
+        var attempts = 0;
+        function next() {
+            if (idx >= targets.length) {
+                btn.textContent = 'Recalibrate now';
+                btn.disabled = false;
+                stat.textContent = 'All affected cameras recalibrated.';
+                return;
+            }
+            var camId = targets[idx];
+            stat.textContent = 'Calibrating ' + camId + '…';
+            if (attempts++ > 80) {
+                btn.textContent = 'Retry';
+                btn.disabled = false;
+                stat.textContent = camId + ' never settled — check the mount, then retry.';
+                return;
+            }
+            fetch('/api/cameras/' + camId + '/calibration_status')
+                .then(function(r) { return r.json(); })
+                .then(function(s) {
+                    if (s && s.stability && s.stability.reason) {
+                        stat.textContent = camId + ': ' + s.stability.reason;
+                    }
+                    if (s && s.stability && s.stability.stable) {
+                        btn.textContent = 'Locking ' + camId + '…';
+                        return fetch('/api/cameras/' + camId + '/calibrate', { method: 'POST' })
+                            .then(function(r) { return r.json(); })
+                            .then(function(res) {
+                                if (res.ok) {
+                                    stat.textContent = camId + ' locked ✓';
+                                    idx += 1;
+                                    attempts = 0;
+                                    setTimeout(next, 400);
+                                } else {
+                                    btn.textContent = 'Retry';
+                                    btn.disabled = false;
+                                    stat.textContent = camId + ': ' + (res.reason || 'Refused');
+                                }
+                            });
+                    }
+                    setTimeout(next, 200);
+                })
+                .catch(function() { setTimeout(next, 300); });
+        }
+        next();
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        var rb = document.getElementById('sb-recalibrate');
+        var ob = document.getElementById('sb-open-settings');
+        if (rb) rb.addEventListener('click', _bannerRecalibrate);
+        if (ob) ob.addEventListener('click', function() { toggleSettings(); });
+    });
+
+    // Expose for future Settings UI to trigger a re-render after edits
+    window.reloadCoverage = function() { renderCoverageSectors(MAX_COVERAGE_RADIUS); };
+
+    // Called from the SSE handler every frame to recolour wedges based
+    // on live bump watchdog state. Cheap — just a material tint per
+    // camera, no geometry rebuilds. A camera flipping to 'bumped'
+    // turns its wedge red immediately.
+    window.updateWedgeCalibration = function(camerasCalibration) {
+        if (!camerasCalibration) return;
+        for (var camId in camerasCalibration) {
+            var wr = _wedgesByCam[camId];
+            if (!wr) continue;
+            var state = camerasCalibration[camId].state || 'uncalibrated';
+            if (wr.state === state) continue;
+            wr.state = state;
+            var c = _calColorFor(state);
+            if (wr.coneMat) wr.coneMat.color.setHex(c);
+            if (wr.edgeMats) wr.edgeMats.forEach(function(m) { m.color.setHex(c); });
+            if (wr.dotMat) wr.dotMat.color.setHex(c);
+            // Pulse the opacity a bit when bumped so it really grabs attention
+            if (wr.coneMat) {
+                wr.coneMat.opacity = (state === 'bumped' || state === 'imu_lost') ? 0.34 : 0.14;
+            }
+        }
+    };
 
     // ── Detection shapes by class ─────────────────────────
     var SHAPES = {
@@ -958,35 +1905,154 @@ function drawDebugBoxes() {
 // ── HUD update (from SSE spatial data) ─────────────────
 function updateHud(data) {
     var s = data.summary || {};
-    document.getElementById('hud-fps').textContent = data.fps || 0;
+    // Prefer the real camera driver fps over the pipeline loop rate —
+    // the loop spins at its 30 Hz target even when frames are stale,
+    // which made the HUD lie about throughput. Fall back to loop fps
+    // only if no camera is reporting yet.
+    // Two independent FPS streams in the async pipeline:
+    //   camera fps  — RGB delivery rate, matches the encoder (target 30)
+    //   nn fps      — NN inference throughput (target ~25 for YOLOv8n 416 INT8)
+    // The WorldTracker smooths the difference for the UI so positions
+    // stay fluid at 30 FPS even when detections land at 25 FPS.
+    var camsHealth = data.cameras || {};
+    var realFps = 0, realNnFps = 0;
+    for (var cid in camsHealth) {
+        var cf = (camsHealth[cid] && camsHealth[cid].fps) || 0;
+        var nf = (camsHealth[cid] && camsHealth[cid].nn_fps) || 0;
+        if (cf > realFps) realFps = cf;
+        if (nf > realNnFps) realNnFps = nf;
+    }
+    var fpsVal = realFps || data.fps || 0;
+    document.getElementById('hud-fps').textContent = fpsVal.toFixed ? fpsVal.toFixed(1) : fpsVal;
+    var nnEl = document.getElementById('hud-nn-fps');
+    if (nnEl) nnEl.textContent = realNnFps.toFixed ? realNnFps.toFixed(1) : realNnFps;
     document.getElementById('hud-count').textContent = (data.detections || []).length;
-    document.getElementById('hud-nearest').textContent = s.closest_m ? s.closest_m.toFixed(1) + 'm' : '--';
+    window._lastClosestM = s.closest_m;
+    document.getElementById('hud-nearest').textContent = s.closest_m != null ? formatDist(s.closest_m) : '--';
 
     // Update shared detection state
     currentDetections = data.detections || [];
 
+    // Drive the round AMOLED cab display preview from the same data.
+    updateCabDisplay(currentDetections);
+
+    // Zone visuals are intentionally muted while we focus on smooth
+    // tracking. The server-side ZoneClassifier still runs and powers
+    // alarms / safety state, but the cab display only shows the live
+    // track count + nearest distance — no green/orange/red flicker as
+    // distances cross zone boundaries. Restore zone styling once the
+    // base visual signal is rock solid.
     var zonePill = document.getElementById('zone-pill');
     var zoneText = document.getElementById('zone-text');
-    if (s.danger_count > 0) {
-        zonePill.className = 'status-pill pill-danger';
-        zoneText.textContent = 'DANGER ' + s.closest_m.toFixed(1) + 'm';
-    } else if (s.warning_count > 0) {
-        zonePill.className = 'status-pill pill-warning';
-        zoneText.textContent = 'WARNING';
-    } else {
+    if (zonePill && zoneText) {
         zonePill.className = 'status-pill pill-clear';
-        zoneText.textContent = 'CLEAR';
+        var n = (data.detections || []).length;
+        if (n === 0) {
+            zoneText.textContent = 'CLEAR';
+        } else if (s.closest_m != null) {
+            zoneText.textContent = 'TRACKING ' + n + ' · ' + formatDist(s.closest_m);
+        } else {
+            zoneText.textContent = 'TRACKING ' + n;
+        }
     }
 }
 
 var sse = new EventSource('/api/spatial/stream');
-sse.onmessage = function(e) { try { updateHud(JSON.parse(e.data)); } catch(err) {} };
+sse.onmessage = function(e) {
+    try {
+        var data = JSON.parse(e.data);
+        updateHud(data);
+        if (window.updateWedgeCalibration) {
+            window.updateWedgeCalibration(data.cameras_calibration);
+        }
+        if (window.updateSafetyBanner) {
+            window.updateSafetyBanner(data.safety_state, data.bumped_cameras);
+        }
+    } catch(err) {}
+};
 sse.onerror = function() {
     sse.close();
     setInterval(function() {
         fetch('/api/spatial').then(function(r) { return r.json(); }).then(updateHud).catch(function() {});
     }, 500);
 };
+
+// ── Camera status (overlay + status pill) ──────────────────
+var lastCamState = null;
+var STATE_TITLES = {
+    connecting:  'Connecting to camera…',
+    restarting:  'Reconnecting camera',
+    error:       'Camera unavailable',
+    no_camera:   'No camera configured',
+    connected:   '',
+};
+var PILL_LABELS = {
+    connecting:  { label: 'CONNECTING', cls: 'pill-conn-wait' },
+    restarting:  { label: 'SWITCHING',  cls: 'pill-conn-wait' },
+    error:       { label: 'ERROR',      cls: 'pill-conn-err' },
+    no_camera:   { label: 'NO CAMERA',  cls: 'pill-conn-err' },
+    connected:   { label: 'LIVE',       cls: 'pill-conn-ok' },
+};
+function setCameraStatus(status) {
+    var overlay = document.getElementById('cam-status-overlay');
+    var titleEl = document.getElementById('cs-title');
+    var msgEl   = document.getElementById('cs-message');
+    var hintEl  = document.getElementById('cs-hint');
+    var pill    = document.getElementById('conn-pill');
+    var pillTxt = document.getElementById('conn-text');
+    var state = status.state || 'connecting';
+
+    // Swap overlay state class
+    overlay.className = 'cam-status-overlay state-' + state;
+    if (state === 'connected') {
+        overlay.classList.remove('visible');
+    } else {
+        overlay.classList.add('visible');
+        titleEl.textContent = STATE_TITLES[state] || 'Camera';
+        var msg = status.message || '';
+        if (state === 'restarting' && status.model_name) {
+            msg = 'Switching to ' + status.model_name + ' · this takes ~10–30 seconds.';
+        }
+        if (state === 'connecting' && status.model_name) {
+            msg = (msg ? msg + ' · ' : '') + 'Model: ' + status.model_name;
+        }
+        msgEl.textContent = msg;
+        hintEl.style.display = (state === 'error' || state === 'no_camera') ? 'inline-block' : 'none';
+    }
+
+    // Pill
+    var pillInfo = PILL_LABELS[state] || PILL_LABELS.connecting;
+    pill.className = 'status-pill ' + pillInfo.cls;
+    pillTxt.textContent = pillInfo.label;
+    if (state === 'connected' && status.fps) {
+        pillTxt.textContent = 'LIVE · ' + Math.round(status.fps) + ' FPS';
+    }
+
+    lastCamState = state;
+}
+
+function pollCameraStatus() {
+    fetch('/api/camera/status').then(function(r) { return r.json(); }).then(function(data) {
+        setCameraStatus(data);
+        // If the active model changed under us (e.g. from server restart), sync the UI
+        if (data.model && data.model !== activeModelId && availableModels.length) {
+            activeModelId = data.model;
+            pendingModelId = '';
+            var m = availableModels.find(function(x) { return x.id === activeModelId; });
+            if (m) {
+                DETECTION_CLASSES = buildClassesFromModel(m);
+                renderDetectionGrid();
+            }
+            renderModelList();
+        }
+    }).catch(function() {
+        setCameraStatus({ state: 'error', message: 'Cannot reach server.' });
+    });
+}
+
+// Poll status on a slower cadence than the snapshot loop
+setInterval(pollCameraStatus, 1500);
+pollCameraStatus();
 
 // ── Camera feed — double-buffered snapshot pull ──
 (function() {
@@ -996,6 +2062,13 @@ sse.onerror = function() {
     var inflight = false;
     function pull() {
         if (inflight) return;
+        // Don't waste bandwidth fetching snapshots while we know the camera
+        // is restarting / errored / missing — the status overlay will cover
+        // the feed anyway, and a stale last-frame would be misleading.
+        if (lastCamState && lastCamState !== 'connected' && lastCamState !== 'connecting') {
+            setTimeout(pull, 500);
+            return;
+        }
         inflight = true;
         fetch('/api/camera/snapshot').then(function(r) {
             if (r.status === 204) throw 'no frame';

@@ -28,6 +28,24 @@
         </div>
     </div>
 
+    <!-- Cameras -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">Cameras</div>
+            <div class="card-description">
+                Magnetically mount each camera, aim it, then calibrate. Once
+                calibrated, the system watches the IMU for bumps — if a camera
+                shifts more than its threshold, its zone is flagged unsafe and
+                the operator is alerted.
+            </div>
+        </div>
+        <div class="card-content">
+            <div id="cameras-list">
+                <div class="text-sm text-muted">Loading cameras...</div>
+            </div>
+        </div>
+    </div>
+
     <!-- Connectivity -->
     <div class="card">
         <div class="card-header">
@@ -312,6 +330,169 @@ function gatherDetectionConfig() {
     return config;
 }
 
+/* --- Cameras panel (magnetic mount + calibrate) --- */
+
+let _camerasPollTimer = null;
+
+function _calStateColor(state) {
+    switch (state) {
+        case 'nominal': return 'var(--status-success, #22c55e)';
+        case 'warn':    return 'var(--status-warning, #f59e0b)';
+        case 'bumped':  return 'var(--status-danger, #ef4444)';
+        case 'imu_lost': return 'var(--status-danger, #ef4444)';
+        default: return '#6b7280';
+    }
+}
+
+function _calStateLabel(state) {
+    switch (state) {
+        case 'nominal': return 'OK';
+        case 'warn': return 'Drift';
+        case 'bumped': return 'BUMPED';
+        case 'imu_lost': return 'IMU LOST';
+        case 'uncalibrated': return 'Not calibrated';
+        default: return state || 'Unknown';
+    }
+}
+
+async function loadCameras() {
+    const cfg = await fetch('/api/config').then(r => r.json());
+    const cams = cfg.installed_cameras || [];
+    const container = document.getElementById('cameras-list');
+    if (!container) return;
+
+    if (!cams.length) {
+        container.innerHTML =
+            '<div class="text-sm text-muted">' +
+            'No cameras installed. Connect an OAK-D Pro W PoE camera to the ' +
+            'machine network and it will appear here after discovery.' +
+            '</div>';
+        return;
+    }
+
+    container.innerHTML = cams.map(function(cam) {
+        const id = cam.id;
+        return (
+            '<div class="form-row" id="cam-row-' + id + '" ' +
+                 'style="flex-direction:column;align-items:stretch;gap:8px;' +
+                 'padding:12px;border:1px solid #2a2f3a;border-radius:8px;margin-bottom:8px;">' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">' +
+                    '<div>' +
+                        '<div class="label" style="margin-bottom:2px;">' +
+                            '<span id="cam-dot-' + id + '" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#6b7280;margin-right:8px;vertical-align:middle;"></span>' +
+                            (cam.label || id) +
+                        '</div>' +
+                        '<div class="text-xs text-muted">' +
+                            (cam.device_id || 'no device') +
+                            ' • yaw ' + (cam.yaw_deg || 0) + '°' +
+                            ' • HFOV ' + (cam.hfov_deg || 127) + '°' +
+                        '</div>' +
+                    '</div>' +
+                    '<button class="btn btn-primary btn-sm" ' +
+                            'id="cam-cal-btn-' + id + '" ' +
+                            'onclick="startCalibrate(\'' + id + '\')">Calibrate</button>' +
+                '</div>' +
+                '<div class="text-xs" id="cam-status-' + id + '" style="color:#9ca3af;">—</div>' +
+            '</div>'
+        );
+    }).join('');
+
+    // Start polling calibration status for all cameras
+    if (_camerasPollTimer) clearInterval(_camerasPollTimer);
+    _camerasPollTimer = setInterval(pollCameraStatuses, 500);
+    pollCameraStatuses();
+}
+
+async function pollCameraStatuses() {
+    const cfg = await fetch('/api/config').then(r => r.json());
+    const cams = cfg.installed_cameras || [];
+    for (const cam of cams) {
+        try {
+            const s = await fetch('/api/cameras/' + cam.id + '/calibration_status')
+                .then(r => r.ok ? r.json() : null);
+            if (!s) continue;
+            const dot = document.getElementById('cam-dot-' + cam.id);
+            const statusEl = document.getElementById('cam-status-' + cam.id);
+            if (dot) dot.style.background = _calStateColor(s.state);
+            if (!statusEl) continue;
+
+            const lines = [];
+            lines.push('State: <b style="color:' + _calStateColor(s.state) + '">' + _calStateLabel(s.state) + '</b>');
+            if (s.calibrated_at) {
+                const when = new Date(s.calibrated_at).toLocaleString();
+                lines.push('Calibrated ' + when);
+            }
+            if (s.current_delta_deg !== null && s.current_delta_deg !== undefined) {
+                lines.push('Drift ' + s.current_delta_deg.toFixed(2) + '° / threshold ' + s.bump_threshold_deg + '°');
+            }
+            if (!s.imu_present) {
+                lines.push('<span style="color:var(--status-danger)">No IMU data</span>');
+            } else if (s.stability && !s.stability.stable && s.stability.reason) {
+                lines.push('<span style="color:#9ca3af">' + s.stability.reason + '</span>');
+            }
+            statusEl.innerHTML = lines.join(' &nbsp;•&nbsp; ');
+        } catch (err) {}
+    }
+}
+
+async function startCalibrate(camId) {
+    const btn = document.getElementById('cam-cal-btn-' + camId);
+    const statusEl = document.getElementById('cam-status-' + camId);
+    if (!btn) return;
+
+    // Require stability window before committing. We tight-loop until
+    // either the driver reports stable OR the installer cancels.
+    btn.disabled = true;
+    btn.textContent = 'Hold still…';
+    let canceled = false;
+    const origClick = btn.onclick;
+    btn.onclick = function() { canceled = true; };
+
+    for (let i = 0; i < 60 && !canceled; i++) {
+        const s = await fetch('/api/cameras/' + camId + '/calibration_status').then(r => r.json());
+        if (s.stability && s.stability.stable) {
+            // Commit
+            btn.textContent = 'Locking…';
+            const res = await fetch('/api/cameras/' + camId + '/calibrate', { method: 'POST' })
+                .then(r => r.json());
+            if (res.ok) {
+                btn.textContent = 'Locked ✓';
+                // Also refresh the spatial view if it's open
+                if (window.reloadCoverage) window.reloadCoverage();
+                setTimeout(function() {
+                    btn.textContent = 'Calibrate';
+                    btn.disabled = false;
+                    btn.onclick = function() { startCalibrate(camId); };
+                }, 1200);
+                return;
+            } else {
+                btn.textContent = 'Failed';
+                if (statusEl) {
+                    statusEl.innerHTML = '<span style="color:var(--status-danger)">' +
+                        (res.reason || 'Calibration refused') + '</span>';
+                }
+                setTimeout(function() {
+                    btn.textContent = 'Calibrate';
+                    btn.disabled = false;
+                    btn.onclick = function() { startCalibrate(camId); };
+                }, 2000);
+                return;
+            }
+        }
+        if (statusEl && s.stability && s.stability.reason) {
+            statusEl.innerHTML = '<span style="color:#9ca3af">' + s.stability.reason + '</span>';
+        }
+        await new Promise(r => setTimeout(r, 200));
+    }
+
+    btn.textContent = canceled ? 'Calibrate' : 'Timed out';
+    btn.disabled = false;
+    btn.onclick = function() { startCalibrate(camId); };
+    if (!canceled && statusEl) {
+        statusEl.innerHTML = '<span style="color:var(--status-warning)">Camera never settled — check mount</span>';
+    }
+}
+
 /* --- Load / Save --- */
 
 async function loadSettings() {
@@ -319,6 +500,7 @@ async function loadSettings() {
         fetch('/api/config').then(r => r.json()),
         loadMachineProfiles(),
         loadDetectionConfig(),
+        loadCameras(),
     ]);
 
     // Machine type

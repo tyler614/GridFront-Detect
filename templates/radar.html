@@ -69,12 +69,12 @@
         <div class="stat-label">Closest</div>
     </div>
     <div class="stat-item">
-        <div class="stat-value danger" id="stat-danger">0</div>
-        <div class="stat-label">Danger</div>
+        <div class="stat-value info" id="stat-danger">0</div>
+        <div class="stat-label">Tracking</div>
     </div>
     <div class="stat-item">
-        <div class="stat-value warning" id="stat-warning">0</div>
-        <div class="stat-label">Warning</div>
+        <div class="stat-value info" id="stat-warning">0</div>
+        <div class="stat-label">Zones soon</div>
     </div>
     <div class="stat-item">
         <div class="stat-value ok" id="stat-fps">0</div>
@@ -86,18 +86,10 @@
 const canvas = document.getElementById('radar-canvas');
 const ctx = canvas.getContext('2d');
 
-// Load config for zone distances
-let ZONE_DANGER = 3;
-let ZONE_WARNING = 7;
-let MAX_RANGE = 10;
-
-fetch('/api/config').then(r => r.json()).then(cfg => {
-    if (cfg.zones) {
-        ZONE_DANGER = cfg.zones.danger_m || 3;
-        ZONE_WARNING = cfg.zones.warning_m || 7;
-        MAX_RANGE = cfg.zones.max_range_m || 10;
-    }
-});
+// Fixed view radius — zones removed for now so movement at 1-2 m
+// physical scale is actually visible. Will reintroduce zone-based
+// shading once tracking smoothness is bedded in.
+const MAX_RANGE = 10;
 
 function resizeCanvas() {
     const wrapper = canvas.parentElement;
@@ -123,53 +115,24 @@ function drawRadar(detections) {
 
     ctx.clearRect(0, 0, w, h);
 
-    // Background
-    ctx.fillStyle = '#141414';
+    // Black disc — single outer ring marks the view radius. No zone
+    // fills, no nested rings, no flashing. The point is to make 1-2 m
+    // movements obvious; anything else competes for attention.
+    ctx.fillStyle = '#050505';
     ctx.beginPath();
-    ctx.arc(cx, cy, radius + 2, 0, Math.PI * 2);
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Zone fills (outside in)
-    // Clear zone (full circle)
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.04)';
     ctx.beginPath();
     ctx.arc(cx, cy, MAX_RANGE * scale, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.strokeStyle = 'rgba(120, 120, 120, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
 
-    // Warning zone
-    ctx.fillStyle = 'rgba(234, 88, 12, 0.06)';
-    ctx.beginPath();
-    ctx.arc(cx, cy, ZONE_WARNING * scale, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Danger zone
-    ctx.fillStyle = 'rgba(220, 38, 38, 0.1)';
-    ctx.beginPath();
-    ctx.arc(cx, cy, ZONE_DANGER * scale, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Grid rings
-    const rings = [
-        { r: ZONE_DANGER, color: 'rgba(255, 68, 68, 0.35)' },
-        { r: ZONE_WARNING, color: 'rgba(255, 170, 68, 0.25)' },
-        { r: MAX_RANGE, color: 'rgba(79, 255, 79, 0.15)' },
-    ];
-    for (const ring of rings) {
-        const r = ring.r * scale;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.strokeStyle = ring.color;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        // Label
-        ctx.fillStyle = 'rgba(166, 166, 166, 0.7)';
-        ctx.font = '500 10px Roboto';
-        ctx.textAlign = 'left';
-        ctx.fillText(ring.r + 'm', cx + 4, cy - r + 12);
-    }
+    ctx.fillStyle = 'rgba(166, 166, 166, 0.55)';
+    ctx.font = '500 10px Roboto';
+    ctx.textAlign = 'left';
+    ctx.fillText(MAX_RANGE + 'm', cx + 4, cy - MAX_RANGE * scale + 12);
 
     // Crosshairs
     ctx.strokeStyle = 'rgba(51, 51, 51, 0.6)';
@@ -200,8 +163,10 @@ function drawRadar(detections) {
     ctx.fillText('R', cx + radius - 12, cy);
     ctx.restore();
 
-    // Machine body (top-down rectangle)
-    const mw = 18, mh = 28;
+    // Machine body (top-down rectangle) — sized in pixels relative to
+    // the canvas; bigger now that the view radius is 10 m so the
+    // operator can immediately see scale.
+    const mw = 26, mh = 40;
     ctx.fillStyle = '#0ea5e9';
     ctx.beginPath();
     ctx.roundRect(cx - mw/2, cy - mh/2, mw, mh, 3);
@@ -219,19 +184,22 @@ function drawRadar(detections) {
     ctx.closePath();
     ctx.fill();
 
-    // Detection markers
-    for (const det of detections) {
-        const rx = cx + det.x_m * scale;
-        const ry = cy - det.z_m * scale;
+    // Detection markers — neutral color, no zone flashing.
+    // Server-side WorldTracker hands us pre-smoothed positions; we add
+    // a per-track render-time lerp purely for visual interpolation
+    // between SSE arrivals (cab display does the same).
+    const NEUTRAL = '#7dd3fc'; // soft cyan, matches machine body
+    const COAST_ALPHA = 0.55;  // dim a bit while coasting
 
-        let color;
-        if (det.zone === 'DANGER') color = '#ff4444';
-        else if (det.zone === 'WARNING') color = '#ffaa44';
-        else color = '#4fff4f';
+    for (const det of detections) {
+        const rx = cx + (det._sx || det.x_m) * scale;
+        const ry = cy - (det._sz || det.z_m) * scale;
+        const opacity = det.coasting ? COAST_ALPHA : 1.0;
+        ctx.globalAlpha = opacity;
 
         // Glow
         const grad = ctx.createRadialGradient(rx, ry, 0, rx, ry, 20);
-        grad.addColorStop(0, color + '60');
+        grad.addColorStop(0, NEUTRAL + '55');
         grad.addColorStop(1, 'transparent');
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -241,12 +209,12 @@ function drawRadar(detections) {
         // Outer ring
         ctx.beginPath();
         ctx.arc(rx, ry, 8, 0, Math.PI * 2);
-        ctx.strokeStyle = color;
+        ctx.strokeStyle = NEUTRAL;
         ctx.lineWidth = 2;
         ctx.stroke();
 
         // Inner dot
-        ctx.fillStyle = color;
+        ctx.fillStyle = NEUTRAL;
         ctx.beginPath();
         ctx.arc(rx, ry, 4, 0, Math.PI * 2);
         ctx.fill();
@@ -256,32 +224,97 @@ function drawRadar(detections) {
         ctx.font = '700 11px Roboto';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(det.distance_m.toFixed(1) + 'm', rx, ry - 12);
+        ctx.fillText((det._sdist != null ? det._sdist : det.distance_m).toFixed(1) + 'm', rx, ry - 12);
 
         // Label type
-        ctx.fillStyle = color;
+        ctx.fillStyle = NEUTRAL;
         ctx.font = '500 9px Roboto';
         ctx.textBaseline = 'top';
-        ctx.fillText('PERSON', rx, ry + 12);
+        ctx.fillText((det.label || 'object').toUpperCase(), rx, ry + 12);
+
+        ctx.globalAlpha = 1.0;
     }
 }
 
-// Poll and draw
-async function tick() {
-    try {
-        const res = await fetch('/api/spatial');
-        const data = await res.json();
-        drawRadar(data.detections || []);
+// ── SSE-driven detection state — locked in step with the cab display ──
+// Both views read from /api/spatial/stream so the dot in the radar and
+// the figure in the 3D scene cannot disagree. RAF drives the actual
+// redraw at the display refresh rate, with a per-track lerp toward the
+// last SSE target for sub-frame visual smoothness.
+let currentDetections = [];
+let lastSummary = {};
+let lastFps = 0;
+const trackVis = new Map();   // track_id -> { x, z, dist }
+const TRACK_TTL_MS = 800;     // drop entries we haven't seen recently
+const trackSeen = new Map();
 
-        const s = data.summary || {};
-        document.getElementById('stat-closest').textContent = s.closest_m ? s.closest_m.toFixed(1) + 'm' : '--';
-        document.getElementById('stat-danger').textContent = s.danger_count || 0;
-        document.getElementById('stat-warning').textContent = s.warning_count || 0;
-        document.getElementById('stat-fps').textContent = data.fps || 0;
-    } catch (e) {}
+function ingest(data) {
+    currentDetections = data.detections || [];
+    lastSummary = data.summary || {};
+    // Use camera fps when available so the displayed value matches the
+    // cab display. Fall back to the loop fps.
+    const cams = data.cameras || {};
+    let realFps = 0;
+    for (const cid in cams) {
+        const f = cams[cid] && cams[cid].fps;
+        if (f && f > realFps) realFps = f;
+    }
+    lastFps = realFps || data.fps || 0;
+    const now = performance.now();
+    for (const det of currentDetections) {
+        const tid = det.track_id || ('u' + (det.label || '') + Math.round((det.x_m || 0) * 10) + '_' + Math.round((det.z_m || 0) * 10));
+        det._tid = tid;
+        trackSeen.set(tid, now);
+    }
 }
 
-setInterval(tick, 100);
-tick();
+const RENDER_LERP = 0.30; // RAF-rate visual interpolation
+
+function frame() {
+    const now = performance.now();
+    // GC stale visual entries
+    for (const [tid, ts] of trackSeen) {
+        if (now - ts > TRACK_TTL_MS) {
+            trackSeen.delete(tid);
+            trackVis.delete(tid);
+        }
+    }
+    // Lerp visual position toward latest target for each detection
+    for (const det of currentDetections) {
+        const tid = det._tid;
+        const tx = det.x_m || 0;
+        const tz = det.z_m || 0;
+        const td = det.distance_m != null ? det.distance_m : Math.sqrt(tx * tx + tz * tz);
+        let v = trackVis.get(tid);
+        if (!v) { v = { x: tx, z: tz, dist: td }; trackVis.set(tid, v); }
+        v.x += (tx - v.x) * RENDER_LERP;
+        v.z += (tz - v.z) * RENDER_LERP;
+        v.dist += (td - v.dist) * RENDER_LERP;
+        det._sx = v.x; det._sz = v.z; det._sdist = v.dist;
+    }
+    drawRadar(currentDetections);
+
+    // HUD — show track count instead of zone counters; zones come back later.
+    const closest = lastSummary.closest_m;
+    document.getElementById('stat-closest').textContent = closest ? closest.toFixed(1) + 'm' : '--';
+    document.getElementById('stat-danger').textContent = currentDetections.length;
+    document.getElementById('stat-warning').textContent = (lastSummary.danger_count || 0) + (lastSummary.warning_count || 0);
+    document.getElementById('stat-fps').textContent = lastFps ? lastFps.toFixed(0) : 0;
+
+    requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// Subscribe to the same SSE stream the cab display uses.
+const sse = new EventSource('/api/spatial/stream');
+sse.onmessage = function(e) {
+    try { ingest(JSON.parse(e.data)); } catch (err) {}
+};
+sse.onerror = function() {
+    sse.close();
+    setInterval(function() {
+        fetch('/api/spatial').then(function(r) { return r.json(); }).then(ingest).catch(function() {});
+    }, 500);
+};
 </script>
 {% endblock %}
