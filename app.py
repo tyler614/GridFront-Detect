@@ -121,37 +121,12 @@ def resolve_installed_cameras(config):
 
 @app.route("/")
 def index():
+    # Single-page app: detect.html is the only view. Settings live in a
+    # popup on this same page (see toggleSettings in detect.html). The old
+    # /dashboard, /cameras, /alerts, /settings, /radar, /machines templates
+    # were removed — everything they did is now either a popup section or
+    # an API endpoint consumed directly by detect.html.
     return render_template("detect.html")
-
-
-@app.route("/radar")
-def radar_page():
-    return render_template("radar.html")
-
-
-@app.route("/cameras")
-def cameras_page():
-    return render_template("cameras.html")
-
-
-@app.route("/settings")
-def settings_page():
-    return render_template("settings.html")
-
-
-@app.route("/alerts")
-def alerts_page():
-    return render_template("alerts.html")
-
-
-@app.route("/dashboard")
-def dashboard_page():
-    return render_template("dashboard.html")
-
-
-@app.route("/machines")
-def machines_page():
-    return render_template("machines.html")
 
 
 # ── Spatial API ──────────────────────────────────────────────

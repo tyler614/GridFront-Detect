@@ -7,12 +7,47 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0A0A0A">
 <title>GridFront Detect</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
+    /* ── GridFront platform design tokens ──────────────
+       Mirrors platform.gridfront.io (Next.js + Tailwind +
+       shadcn/ui). HSL values here match the platform's
+       :root dark theme so this app feels native to the
+       rest of the product line. */
+    :root {
+        --background: 0 0% 7%;        /* #121212 */
+        --foreground: 0 0% 95%;       /* #F2F2F0 */
+        --card: 0 0% 10%;             /* #1A1A18 */
+        --card-foreground: 0 0% 95%;
+        --popover: 0 0% 10%;
+        --popover-foreground: 0 0% 95%;
+        --primary: 0 0% 95%;          /* #F2F2F0 */
+        --primary-foreground: 0 0% 9%;
+        --secondary: 0 0% 15%;
+        --secondary-foreground: 0 0% 95%;
+        --muted: 0 0% 15%;
+        --muted-foreground: 0 0% 60%;
+        --accent: 0 0% 18%;
+        --accent-foreground: 0 0% 95%;
+        --destructive: 0 70% 55%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 20%;           /* #333330 */
+        --input: 0 0% 20%;
+        --ring: 0 0% 60%;
+        --navbar: 0 0% 12%;           /* #1F1F1C */
+        --radius: 0.5rem;
+        --success: 142 71% 45%;
+        --warning: 25 95% 53%;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
         height: 100%; overflow: hidden;
-        background: #0A0A0A; color: #F2F2F2;
-        font-family: -apple-system, system-ui, sans-serif;
+        background: hsl(var(--background)); color: hsl(var(--foreground));
+        font-family: 'Roboto', -apple-system, system-ui, sans-serif;
+        font-feature-settings: 'kern';
+        -webkit-font-smoothing: antialiased;
         -webkit-user-select: none; user-select: none;
     }
     .app {
@@ -23,34 +58,41 @@
     /* ── Status bar ─────────────────────────────────── */
     .status-bar {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 6px 12px;
-        background: #111; border-bottom: 1px solid #222;
-        flex-shrink: 0; min-height: 36px;
+        padding: 8px 16px;
+        background: hsl(var(--navbar));
+        border-bottom: 1px solid hsl(var(--border));
+        flex-shrink: 0; min-height: 44px;
     }
-    .status-left { display: flex; align-items: center; gap: 8px; }
-    .status-logo { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; }
-    .status-logo span { color: #555; font-weight: 400; }
+    .status-left { display: flex; align-items: center; gap: 10px; }
+    .status-logo {
+        font-size: 14px; font-weight: 700; letter-spacing: -0.01em;
+        color: hsl(var(--foreground));
+    }
+    .status-logo span { color: hsl(var(--muted-foreground)); font-weight: 400; }
     .status-pill {
-        display: flex; align-items: center; gap: 5px;
-        padding: 2px 8px; border-radius: 99px;
-        font-size: 11px; font-weight: 600;
+        display: flex; align-items: center; gap: 6px;
+        padding: 3px 10px; border-radius: calc(var(--radius) - 2px);
+        font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
     }
-    .pill-live { background: rgba(34,197,94,0.15); color: #4ade80; }
-    .pill-danger { background: rgba(239,68,68,0.2); color: #f87171; animation: pulse 0.8s ease-in-out infinite alternate; }
-    .pill-warning { background: rgba(251,146,60,0.2); color: #fb923c; }
-    .pill-clear { background: rgba(34,197,94,0.1); color: #4ade80; }
+    .pill-live { background: hsla(0, 0%, 100%, 0.08); color: hsl(var(--foreground)); border: 1px solid hsla(0, 0%, 100%, 0.15); }
+    .pill-danger { background: hsla(0, 70%, 55%, 0.18); color: hsl(0 84% 72%); border: 1px solid hsla(0, 70%, 55%, 0.35); animation: pulse 0.8s ease-in-out infinite alternate; }
+    .pill-warning { background: hsla(25, 95%, 53%, 0.18); color: hsl(25 95% 65%); border: 1px solid hsla(25, 95%, 53%, 0.35); }
+    .pill-clear { background: hsla(0, 0%, 100%, 0.06); color: hsl(var(--muted-foreground)); border: 1px solid hsla(0, 0%, 100%, 0.12); }
     .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
     @keyframes pulse { from { opacity: 1; } to { opacity: 0.4; } }
 
-    .status-right { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #777; }
+    .status-right { display: flex; align-items: center; gap: 12px; font-size: 11px; color: hsl(var(--muted-foreground)); }
     .stat { display: flex; align-items: center; gap: 4px; }
-    .stat b { color: #ccc; font-weight: 600; }
+    .stat b { color: hsl(var(--foreground)); font-weight: 600; }
     .btn-icon {
         background: none; border: none; cursor: pointer;
-        color: #666; padding: 4px; display: flex; align-items: center;
-        transition: color 0.15s;
+        color: hsl(var(--muted-foreground));
+        padding: 8px; display: flex; align-items: center; justify-content: center;
+        border-radius: calc(var(--radius) - 2px);
+        min-width: 36px; min-height: 36px;
+        transition: color 0.15s, background 0.15s;
     }
-    .btn-icon:hover { color: #ccc; }
+    .btn-icon:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
     .btn-icon svg { width: 18px; height: 18px; }
 
     /* ── Panels ──────────────────────────────────────── */
@@ -136,100 +178,434 @@
         letter-spacing: 1px; text-transform: uppercase;
     }
 
-    /* ── Settings overlay ───────────────────────────── */
+    /* ── Settings overlay (platform-styled, LIGHT THEME) ─
+       The main detect app stays dark (in-cab readability),
+       but the settings screen flips to platform's light
+       theme so it matches platform.gridfront.io exactly.
+       Light tokens are scoped here so the rest of the app
+       is unaffected. */
     .settings-overlay {
+        --background: 0 0% 100%;
+        --foreground: 0 0% 3.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 3.9%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 3.9%;
+        --primary: 0 0% 9%;
+        --primary-foreground: 0 0% 98%;
+        --secondary: 0 0% 96.1%;
+        --secondary-foreground: 0 0% 9%;
+        --muted: 0 0% 96.1%;
+        --muted-foreground: 0 0% 45.1%;
+        --accent: 0 0% 96.1%;
+        --accent-foreground: 0 0% 9%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 89.8%;
+        --input: 0 0% 89.8%;
+        --ring: 0 0% 63%;
+        --navbar: 0 0% 100%;
+        --warning: 25 95% 53%;
+        --success: 142 71% 45%;
+
         display: none; position: fixed; inset: 0;
-        background: rgba(0,0,0,0.85); z-index: 600;
+        background: hsla(0, 0%, 0%, 0.5);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        z-index: 600;
         overflow-y: auto; -webkit-overflow-scrolling: touch;
+        color: hsl(var(--foreground));
     }
     .settings-overlay.open { display: block; }
     .settings-container {
-        max-width: 600px; margin: 0 auto;
-        padding: 20px 16px 40px;
+        max-width: 880px;
+        margin: 32px auto;
+        background: hsl(var(--background));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        box-shadow: 0 25px 60px hsla(0, 0%, 0%, 0.4);
+        overflow: hidden;
     }
     .settings-header {
         display: flex; align-items: center; justify-content: space-between;
-        margin-bottom: 24px; padding-bottom: 12px;
-        border-bottom: 1px solid #333;
+        padding: 24px 28px 20px;
+        background: hsl(var(--background));
+        border-bottom: 1px solid hsl(var(--border));
     }
-    .settings-header h1 { font-size: 18px; font-weight: 600; }
+    .settings-header h1 {
+        font-size: 22px; font-weight: 700;
+        letter-spacing: -0.02em;
+        color: hsl(var(--foreground));
+    }
+    .settings-header .settings-subtitle {
+        display: block; font-size: 12px; font-weight: 400;
+        color: hsl(var(--muted-foreground));
+        margin-top: 2px; letter-spacing: 0;
+    }
     .btn-close {
-        background: none; border: none; cursor: pointer;
-        color: #888; padding: 4px; display: flex; transition: color 0.15s;
+        background: transparent;
+        border: 1px solid hsl(var(--border));
+        cursor: pointer;
+        color: hsl(var(--muted-foreground));
+        width: 40px; height: 40px;
+        border-radius: calc(var(--radius) - 2px);
+        display: flex; align-items: center; justify-content: center;
+        transition: color 0.15s, background 0.15s, border-color 0.15s;
     }
-    .btn-close:hover { color: #fff; }
-    .btn-close svg { width: 22px; height: 22px; }
-    .settings-section { margin-bottom: 24px; }
+    .btn-close:hover {
+        color: hsl(var(--foreground));
+        background: hsl(var(--accent));
+        border-color: hsl(var(--ring));
+    }
+    .btn-close svg { width: 18px; height: 18px; }
+
+    /* Tab strip — matches shadcn/ui Tabs on platform.
+       Pill container with the active tab lifted on a
+       white card + shadow. */
+    .settings-tabs {
+        display: flex;
+        gap: 4px;
+        padding: 4px;
+        margin: 20px 28px 0;
+        background: hsl(var(--muted));
+        border-radius: var(--radius);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .settings-tabs::-webkit-scrollbar { display: none; }
+    .settings-tab {
+        flex: 1 1 auto;
+        min-width: max-content;
+        padding: 8px 16px;
+        border: none;
+        background: transparent;
+        color: hsl(var(--muted-foreground));
+        font-size: 13px; font-weight: 500;
+        font-family: inherit;
+        border-radius: calc(var(--radius) - 2px);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+        letter-spacing: -0.01em;
+    }
+    .settings-tab:hover { color: hsl(var(--foreground)); }
+    .settings-tab.active {
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-weight: 600;
+        box-shadow: 0 1px 2px hsla(0, 0%, 0%, 0.08);
+    }
+
+    .settings-body {
+        padding: 20px 28px 28px;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Each settings block is a Card — matches platform's
+       shadcn Card (bg-card, rounded-lg, border). */
+    .settings-section {
+        margin-bottom: 16px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        padding: 20px 20px 18px;
+    }
+    .tab-panel > .settings-section:last-child { margin-bottom: 0; }
     .settings-section h2 {
-        font-size: 13px; font-weight: 600; color: #888;
-        text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px;
+        font-size: 15px; font-weight: 600;
+        color: hsl(var(--foreground));
+        letter-spacing: -0.01em; margin-bottom: 4px;
+        text-transform: none;
     }
-    .settings-section p { font-size: 12px; color: #666; margin-bottom: 12px; line-height: 1.4; }
+    .settings-section p {
+        font-size: 13px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 16px; line-height: 1.5;
+    }
+
+    /* ── Form primitives — match platform's Input/Select/
+       Button variants exactly: 2px border, --radius, 44px
+       min touch target on mobile. */
+    .settings-section .gf-field { margin-bottom: 14px; }
+    .settings-section .gf-field:last-child { margin-bottom: 0; }
+    .settings-section .gf-label {
+        display: block; font-size: 13px;
+        color: hsl(var(--foreground));
+        margin-bottom: 8px; font-weight: 500;
+        letter-spacing: -0.01em;
+    }
+    .settings-section .gf-hint {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+        margin-top: 6px; line-height: 1.4;
+    }
+    .settings-section .gf-input,
+    .settings-section .gf-select {
+        width: 100%;
+        min-height: 44px;
+        padding: 10px 14px;
+        background: hsl(var(--background));
+        border: 2px solid hsl(var(--border));
+        border-radius: calc(var(--radius) - 2px);
+        color: hsl(var(--foreground));
+        font-size: 14px; font-family: inherit;
+        font-weight: 400;
+        box-sizing: border-box;
+        transition: border-color 0.15s, background 0.15s;
+    }
+    .settings-section .gf-input::placeholder { color: hsl(var(--muted-foreground)); }
+    .settings-section .gf-input:hover,
+    .settings-section .gf-select:hover { border-color: hsl(var(--ring)); }
+    .settings-section .gf-input:focus,
+    .settings-section .gf-select:focus {
+        outline: none;
+        border-color: hsl(var(--primary));
+        box-shadow: 0 0 0 3px hsla(0, 0%, 95%, 0.08);
+    }
+    .settings-section .gf-select {
+        appearance: none; -webkit-appearance: none;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+        padding-right: 36px;
+    }
+    .settings-section .gf-row { display: flex; gap: 10px; }
+    .settings-section .gf-row > * { flex: 1; min-width: 0; }
+    .settings-section .gf-btn {
+        min-height: 44px;
+        padding: 10px 18px;
+        border-radius: calc(var(--radius) - 2px);
+        border: 2px solid hsl(var(--border));
+        background: hsl(var(--card));
+        color: hsl(var(--foreground));
+        font-size: 14px; font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .settings-section .gf-btn:hover {
+        background: hsl(var(--accent));
+        border-color: hsl(var(--ring));
+    }
+    .settings-section .gf-btn-primary {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-color: hsl(var(--primary));
+        font-weight: 600;
+    }
+    .settings-section .gf-btn-primary:hover {
+        background: hsl(0 0% 88%);
+        border-color: hsl(0 0% 88%);
+    }
+    .settings-section .gf-btn-danger {
+        color: hsl(var(--destructive));
+        border-color: hsl(var(--destructive) / 0.4);
+        background: hsl(var(--destructive) / 0.08);
+    }
+    .settings-section .gf-btn-danger:hover {
+        background: hsl(var(--destructive) / 0.15);
+        border-color: hsl(var(--destructive));
+    }
+    .settings-section .gf-kv {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 16px;
+        padding: 12px 0;
+        border-bottom: 1px solid hsl(var(--border));
+    }
+    .settings-section .gf-kv:first-child { padding-top: 0; }
+    .settings-section .gf-kv:last-child { border-bottom: none; padding-bottom: 0; }
+    .settings-section .gf-kv-label { font-size: 14px; color: hsl(var(--foreground)); font-weight: 500; }
+    .settings-section .gf-kv-sub { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 2px; font-weight: 400; }
+    .settings-section .gf-kv select { min-width: 140px; }
+
+    /* Switch primitive — matches shadcn/ui Switch on platform */
+    .settings-section .toggle {
+        position: relative;
+        width: 44px; height: 24px;
+        background: hsl(var(--muted));
+        border: 1px solid hsl(var(--border));
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.18s, border-color 0.18s;
+        flex-shrink: 0;
+        padding: 0;
+    }
+    .settings-section .toggle::after {
+        content: '';
+        position: absolute;
+        top: 50%; left: 2px;
+        width: 18px; height: 18px;
+        background: hsl(var(--foreground));
+        border-radius: 50%;
+        transform: translateY(-50%);
+        transition: left 0.18s, background 0.18s;
+        box-shadow: 0 1px 3px hsla(0, 0%, 0%, 0.3);
+    }
+    .settings-section .toggle.active {
+        background: hsl(var(--primary));
+        border-color: hsl(var(--primary));
+    }
+    .settings-section .toggle.active::after {
+        left: 22px;
+        background: hsl(var(--primary-foreground));
+    }
+
+    /* Device info footer strip inside the settings card */
+    .gf-device-info {
+        background: hsl(var(--muted));
+        border-top: 1px solid hsl(var(--border));
+        padding: 16px 28px;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 16px;
+    }
+    .gf-device-info .gf-title {
+        font-size: 14px; font-weight: 600;
+        color: hsl(var(--foreground));
+        letter-spacing: -0.01em;
+    }
+    .gf-device-info .gf-sub {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+        margin-top: 3px;
+    }
+    .gf-device-info .gf-reset-link {
+        font-size: 12px; color: hsl(var(--muted-foreground));
+        background: transparent; border: none; cursor: pointer;
+        padding: 8px 12px; border-radius: calc(var(--radius) - 2px);
+        font-family: inherit;
+    }
+    .gf-device-info .gf-reset-link:hover {
+        color: hsl(var(--destructive));
+        background: hsl(var(--destructive) / 0.08);
+    }
+
+    /* Auto-save toast — Toast primitive from platform */
+    .gf-save-toast {
+        position: fixed; bottom: 24px; left: 50%;
+        transform: translateX(-50%) translateY(8px);
+        background: hsl(var(--card));
+        color: hsl(var(--foreground));
+        border: 1px solid hsl(var(--border));
+        padding: 12px 18px 12px 14px;
+        border-radius: var(--radius);
+        font-size: 13px; font-weight: 500;
+        z-index: 1000;
+        opacity: 0;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        pointer-events: none;
+        display: flex; align-items: center; gap: 10px;
+        box-shadow: 0 10px 30px hsla(0, 0%, 0%, 0.5);
+        font-family: inherit;
+    }
+    .gf-save-toast::before {
+        content: ''; width: 8px; height: 8px; border-radius: 50%;
+        background: hsl(var(--success));
+        box-shadow: 0 0 0 3px hsl(var(--success) / 0.2);
+    }
+    .gf-save-toast.visible {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
     .detection-grid {
         display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px;
     }
     .detection-item {
         display: flex; align-items: center; gap: 10px;
-        padding: 10px 12px; background: #1a1a1a; border: 1px solid #2a2a2a;
-        border-radius: 8px; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+        padding: 12px 14px;
+        background: hsl(var(--background));
+        border: 2px solid hsl(var(--border));
+        border-radius: calc(var(--radius) - 2px);
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
     }
-    .detection-item:hover { background: #222; }
-    .detection-item.active { border-color: #4ade80; background: rgba(34,197,94,0.08); }
+    .detection-item:hover { border-color: hsl(var(--ring)); }
+    .detection-item.active {
+        border-color: hsl(var(--primary));
+        background: hsl(var(--accent));
+    }
     .detection-check {
-        width: 18px; height: 18px; border-radius: 4px; border: 2px solid #444; flex-shrink: 0;
-        display: flex; align-items: center; justify-content: center; transition: border-color 0.15s, background 0.15s;
+        width: 18px; height: 18px; border-radius: 4px;
+        border: 2px solid hsl(var(--border));
+        flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        transition: border-color 0.15s, background 0.15s;
     }
-    .detection-item.active .detection-check { border-color: #4ade80; background: #4ade80; }
-    .detection-check svg { width: 12px; height: 12px; display: none; }
+    .detection-item.active .detection-check {
+        border-color: hsl(var(--primary));
+        background: hsl(var(--primary));
+    }
+    .detection-check svg { width: 12px; height: 12px; display: none; stroke: hsl(var(--primary-foreground)); }
     .detection-item.active .detection-check svg { display: block; }
     .detection-info { flex: 1; min-width: 0; }
-    .detection-name { font-size: 13px; font-weight: 500; color: #eee; }
-    .detection-meta { font-size: 10px; color: #666; margin-top: 1px; }
-    .priority-high .detection-name { color: #f87171; }
-    .priority-medium .detection-name { color: #fb923c; }
-    .priority-low .detection-name { color: #888; }
+    .detection-name { font-size: 13px; font-weight: 500; color: hsl(var(--foreground)); }
+    .detection-meta { font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 2px; }
+    .priority-high .detection-name { color: hsl(var(--destructive)); }
+    .priority-medium .detection-name { color: hsl(var(--warning)); }
+    .priority-low .detection-name { color: hsl(var(--muted-foreground)); }
     .toggle-all {
         display: inline-flex; align-items: center; gap: 6px;
-        padding: 6px 14px; border-radius: 6px;
-        background: #1a1a1a; border: 1px solid #333;
-        color: #ccc; font-size: 12px; font-weight: 500;
-        cursor: pointer; transition: background 0.15s;
+        padding: 8px 16px;
+        border-radius: calc(var(--radius) - 2px);
+        background: hsl(var(--card));
+        border: 2px solid hsl(var(--border));
+        color: hsl(var(--foreground));
+        font-size: 13px; font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
     }
-    .toggle-all:hover { background: #252525; }
+    .toggle-all:hover {
+        background: hsl(var(--accent));
+        border-color: hsl(var(--ring));
+    }
 
     /* Model cards */
     .model-card {
-        padding: 14px 16px; background: #1a1a1a; border: 2px solid #2a2a2a;
-        border-radius: 10px; cursor: pointer; margin-bottom: 10px;
+        padding: 16px;
+        background: hsl(var(--background));
+        border: 2px solid hsl(var(--border));
+        border-radius: var(--radius);
+        cursor: pointer; margin-bottom: 10px;
         transition: border-color 0.15s, background 0.15s;
     }
-    .model-card:hover { background: #222; }
-    .model-card.active { border-color: #4ade80; background: rgba(34,197,94,0.06); }
+    .model-card:hover { border-color: hsl(var(--ring)); }
+    .model-card.active {
+        border-color: hsl(var(--primary));
+        background: hsl(var(--accent));
+    }
     .model-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
     .model-radio {
-        width: 18px; height: 18px; border-radius: 50%; border: 2px solid #444;
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid hsl(var(--border));
         display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
-    .model-card.active .model-radio { border-color: #4ade80; }
+    .model-card.active .model-radio { border-color: hsl(var(--primary)); }
     .model-radio-dot {
-        width: 10px; height: 10px; border-radius: 50%; background: #4ade80;
+        width: 10px; height: 10px; border-radius: 50%;
+        background: hsl(var(--primary));
         display: none;
     }
     .model-card.active .model-radio-dot { display: block; }
-    .model-name { font-size: 14px; font-weight: 600; color: #eee; }
-    .model-meta { font-size: 11px; color: #888; }
-    .model-desc { font-size: 12px; color: #777; margin-bottom: 8px; line-height: 1.4; }
+    .model-name { font-size: 14px; font-weight: 600; color: hsl(var(--foreground)); letter-spacing: -0.01em; }
+    .model-meta { font-size: 12px; color: hsl(var(--muted-foreground)); }
+    .model-desc { font-size: 13px; color: hsl(var(--muted-foreground)); margin-bottom: 8px; line-height: 1.5; }
     .model-classes {
-        font-size: 11px; color: #666; line-height: 1.5;
+        font-size: 12px; color: hsl(var(--muted-foreground)); line-height: 1.6;
         max-height: 0; overflow: hidden; transition: max-height 0.3s;
     }
     .model-card.active .model-classes { max-height: 200px; }
     .model-class-tag {
-        display: inline-block; padding: 1px 6px; margin: 2px;
-        background: #252525; border-radius: 4px; color: #999; font-size: 10px;
+        display: inline-block; padding: 2px 8px; margin: 2px;
+        background: hsl(var(--muted));
+        border-radius: calc(var(--radius) - 4px);
+        color: hsl(var(--foreground));
+        font-size: 11px;
     }
     .model-restart-note {
-        font-size: 11px; color: #fb923c; margin-top: 6px; display: none;
+        font-size: 12px; color: hsl(var(--warning)); margin-top: 6px; display: none;
     }
     .model-card.pending .model-restart-note { display: block; }
 
@@ -333,9 +709,9 @@
     }
 
     /* Connection pill in status bar */
-    .status-pill.pill-conn-ok { background: rgba(34,197,94,0.15); color: #4ade80; }
-    .status-pill.pill-conn-wait { background: rgba(96,165,250,0.15); color: #60a5fa; }
-    .status-pill.pill-conn-err { background: rgba(239,68,68,0.15); color: #f87171; }
+    .status-pill.pill-conn-ok { background: hsla(0, 0%, 100%, 0.08); color: hsl(var(--foreground)); border: 1px solid hsla(0, 0%, 100%, 0.15); }
+    .status-pill.pill-conn-wait { background: hsla(0, 0%, 100%, 0.05); color: hsl(var(--muted-foreground)); border: 1px solid hsla(0, 0%, 100%, 0.1); }
+    .status-pill.pill-conn-err { background: hsla(0, 70%, 55%, 0.18); color: hsl(0 84% 72%); border: 1px solid hsla(0, 70%, 55%, 0.35); }
 
     /* Model switch confirmation modal */
     .confirm-modal-backdrop {
@@ -361,13 +737,34 @@
         display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px;
     }
     .btn-secondary, .btn-primary {
-        padding: 8px 18px; border-radius: 7px; font-size: 13px; font-weight: 500;
-        cursor: pointer; border: 1px solid transparent;
+        min-height: 40px;
+        padding: 10px 20px;
+        border-radius: calc(var(--radius) - 2px);
+        font-size: 13px; font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
     }
-    .btn-secondary { background: #1a1a1a; border-color: #333; color: #ccc; }
-    .btn-secondary:hover { background: #252525; }
-    .btn-primary { background: #2563eb; color: #fff; }
-    .btn-primary:hover { background: #3b82f6; }
+    .btn-secondary {
+        background: hsl(var(--card));
+        border-color: hsl(var(--border));
+        color: hsl(var(--foreground));
+    }
+    .btn-secondary:hover {
+        background: hsl(var(--accent));
+        border-color: hsl(var(--ring));
+    }
+    .btn-primary {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-color: hsl(var(--primary));
+        font-weight: 600;
+    }
+    .btn-primary:hover {
+        background: hsl(0 0% 88%);
+        border-color: hsl(0 0% 88%);
+    }
 
     /* Category tabs + search */
     .class-toolbar {
@@ -518,22 +915,53 @@
 <div class="settings-overlay" id="settings-overlay">
     <div class="settings-container">
         <div class="settings-header">
-            <h1>Settings</h1>
+            <div>
+                <h1>Settings</h1>
+                <span class="settings-subtitle">Configure this detection unit</span>
+            </div>
             <button class="btn-close" onclick="toggleSettings()">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
             </button>
         </div>
+
+        <div class="settings-tabs" role="tablist">
+            <button class="settings-tab active" role="tab" data-tab="general" onclick="switchSettingsTab('general')">General</button>
+            <button class="settings-tab" role="tab" data-tab="detection" onclick="switchSettingsTab('detection')">Detection</button>
+            <button class="settings-tab" role="tab" data-tab="cameras" onclick="switchSettingsTab('cameras')">Cameras</button>
+            <button class="settings-tab" role="tab" data-tab="alerts" onclick="switchSettingsTab('alerts')">Alerts</button>
+            <button class="settings-tab" role="tab" data-tab="network" onclick="switchSettingsTab('network')">Network</button>
+            <button class="settings-tab" role="tab" data-tab="display" onclick="switchSettingsTab('display')">Display</button>
+        </div>
+
+        <div class="settings-body">
+        <div class="tab-panel active" data-panel="general">
+        <div class="settings-section">
+            <h2>Machine Profile</h2>
+            <p>Select the machine this display is mounted on. The profile provides the footprint dimensions and default proximity zones.</p>
+            <div class="gf-field">
+                <label class="gf-label" for="set-machine-type">Machine type</label>
+                <select class="gf-select" id="set-machine-type" onchange="onMachineTypePreview()">
+                    <option value="">Loading…</option>
+                </select>
+                <div class="gf-hint" id="set-machine-info"></div>
+            </div>
+            <div class="gf-field">
+                <label class="gf-label" for="set-machine-name">Machine name</label>
+                <input class="gf-input" id="set-machine-name" placeholder="e.g. Excavator A12" />
+            </div>
+            <button class="gf-btn" onclick="applyMachineProfile()">Apply profile defaults</button>
+        </div>
         <div class="settings-section">
             <h2>Debug Mode</h2>
             <p>Show detection bounding boxes with confidence scores on the camera feed.</p>
-            <div class="detection-item" id="debug-toggle" onclick="toggleDebugMode()" style="max-width:200px;">
+            <div class="detection-item" id="debug-toggle" onclick="toggleDebugMode()" style="max-width:240px;">
                 <div class="detection-check">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                 </div>
                 <div class="detection-info">
-                    <div class="detection-name" style="color:#60a5fa;">Debug Overlay</div>
+                    <div class="detection-name">Debug Overlay</div>
                     <div class="detection-meta">Bounding boxes + confidence</div>
                 </div>
             </div>
@@ -541,27 +969,30 @@
         <div class="settings-section">
             <h2>Units</h2>
             <p>How distances are shown on the cab display and HUD. Persists across reloads.</p>
-            <div style="display:flex; gap:8px;">
-                <div class="detection-item units-toggle" data-units="m" onclick="setUnits('m')" style="max-width:160px;">
+            <div style="display:flex; gap:10px;">
+                <div class="detection-item units-toggle" data-units="m" onclick="setUnits('m')" style="max-width:180px;">
                     <div class="detection-check">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                     </div>
                     <div class="detection-info">
-                        <div class="detection-name" style="color:#60a5fa;">Meters</div>
+                        <div class="detection-name">Meters</div>
                         <div class="detection-meta">e.g. 3.4 m</div>
                     </div>
                 </div>
-                <div class="detection-item units-toggle" data-units="ft" onclick="setUnits('ft')" style="max-width:160px;">
+                <div class="detection-item units-toggle" data-units="ft" onclick="setUnits('ft')" style="max-width:180px;">
                     <div class="detection-check">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                     </div>
                     <div class="detection-info">
-                        <div class="detection-name" style="color:#60a5fa;">Feet</div>
+                        <div class="detection-name">Feet</div>
                         <div class="detection-meta">e.g. 11.2 ft</div>
                     </div>
                 </div>
             </div>
         </div>
+        </div><!-- /general -->
+
+        <div class="tab-panel" data-panel="detection">
         <div class="settings-section">
             <h2>Detection Models</h2>
             <p>Select the active model. Each model runs on the camera's VPU — only one can be active at a time.</p>
@@ -572,6 +1003,9 @@
             <p>Toggle which detected classes to show. Only classes from the active model appear here.</p>
             <div id="detection-section"></div>
         </div>
+        </div><!-- /detection -->
+
+        <div class="tab-panel" data-panel="cameras">
         <div class="settings-section">
             <h2>Cameras</h2>
             <p>
@@ -582,19 +1016,140 @@
                 operator is alerted in red.
             </p>
             <div id="cameras-list" style="display:flex; flex-direction:column; gap:10px;">
-                <div style="font-size:12px; color:#777;">Loading cameras…</div>
+                <div style="font-size:13px; color: hsl(var(--muted-foreground));">Loading cameras…</div>
             </div>
-            <div style="margin-top:16px; display:flex; gap:16px;">
-                <label style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:#999;">
-                    IR Mode
-                    <select id="set-ir-mode" style="padding:6px 8px; background:#1a1a1a; border:1px solid #333; border-radius:6px; color:#ccc; font-size:13px;">
-                        <option value="auto">Auto</option><option value="on">Always On</option><option value="off">Off</option>
-                    </select>
-                </label>
+            <div class="gf-field" style="margin-top:16px;">
+                <label class="gf-label" for="set-ir-mode">IR Mode</label>
+                <select class="gf-select" id="set-ir-mode" style="max-width:200px;">
+                    <option value="auto">Auto</option>
+                    <option value="on">Always On</option>
+                    <option value="off">Off</option>
+                </select>
             </div>
+        </div>
+        <div class="settings-section">
+            <h2>Detection Zones</h2>
+            <p>Proximity thresholds used by the zone classifier to flag warning / danger states. Distances are in metres regardless of the display units preference.</p>
+            <div class="gf-row">
+                <div class="gf-field">
+                    <label class="gf-label" for="set-zone-danger" style="color: hsl(var(--destructive));">Danger (m)</label>
+                    <input class="gf-input" id="set-zone-danger" type="number" step="0.5" min="0.5" />
+                </div>
+                <div class="gf-field">
+                    <label class="gf-label" for="set-zone-warning" style="color: hsl(var(--warning));">Warning (m)</label>
+                    <input class="gf-input" id="set-zone-warning" type="number" step="0.5" min="0.5" />
+                </div>
+                <div class="gf-field">
+                    <label class="gf-label" for="set-zone-max">Max range (m)</label>
+                    <input class="gf-input" id="set-zone-max" type="number" step="1" min="1" />
+                </div>
+            </div>
+        </div>
+        </div><!-- /cameras -->
+
+        <div class="tab-panel" data-panel="alerts">
+        <div class="settings-section">
+            <h2>Alerts</h2>
+            <p>Audible and visual alarms when detections enter warning or danger zones.</p>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Sound alerts</div>
+                    <div class="gf-kv-sub">Play audio when persons are detected</div>
+                </div>
+                <button class="toggle" id="set-sound-enabled" onclick="this.classList.toggle('active'); autoSaveSettings();"></button>
+            </div>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Danger alarm</div>
+                    <div class="gf-kv-sub">Repeating alarm for danger zone</div>
+                </div>
+                <select class="gf-select" id="set-sound-danger" style="max-width:140px;">
+                    <option value="alarm">Alarm</option>
+                    <option value="beep">Beep</option>
+                    <option value="siren">Siren</option>
+                </select>
+            </div>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Warning chime</div>
+                    <div class="gf-kv-sub">Single tone for warning zone</div>
+                </div>
+                <select class="gf-select" id="set-sound-warning" style="max-width:140px;">
+                    <option value="chime">Chime</option>
+                    <option value="beep">Beep</option>
+                    <option value="tone">Tone</option>
+                </select>
+            </div>
+        </div>
+        </div><!-- /alerts -->
+
+        <div class="tab-panel" data-panel="network">
+        <div class="settings-section">
+            <h2>Connectivity</h2>
+            <p>How the display reaches the GridFront platform. WiFi for yard / depot, SIM for in-field deployments.</p>
+            <div class="gf-field">
+                <label class="gf-label" for="set-conn-mode">Connection mode</label>
+                <select class="gf-select" id="set-conn-mode" onchange="onConnModeChange()">
+                    <option value="wifi">WiFi</option>
+                    <option value="sim">SIM card (LTE)</option>
+                </select>
+            </div>
+            <div id="set-wifi-fields">
+                <div class="gf-field">
+                    <label class="gf-label" for="set-wifi-ssid">WiFi network</label>
+                    <input class="gf-input" id="set-wifi-ssid" placeholder="Network name" />
+                </div>
+                <div class="gf-field">
+                    <label class="gf-label" for="set-wifi-pass">WiFi password</label>
+                    <input class="gf-input" id="set-wifi-pass" type="password" placeholder="Password" />
+                </div>
+            </div>
+            <div id="set-sim-fields" style="display:none;">
+                <div class="gf-field">
+                    <label class="gf-label" for="set-sim-apn">APN</label>
+                    <input class="gf-input" id="set-sim-apn" placeholder="e.g. internet" />
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <h2>GridFront Platform</h2>
+            <p>Credentials for pushing telemetry and pulling remote configuration from platform.gridfront.io.</p>
+            <div class="gf-field">
+                <label class="gf-label" for="set-platform-url">Platform URL</label>
+                <input class="gf-input" id="set-platform-url" placeholder="https://platform.gridfront.io" />
+            </div>
+            <div class="gf-field">
+                <label class="gf-label" for="set-platform-key">API key</label>
+                <input class="gf-input" id="set-platform-key" type="password" placeholder="Your API key" />
+            </div>
+            <div class="gf-field">
+                <label class="gf-label" for="set-platform-tenant">Tenant ID</label>
+                <input class="gf-input" id="set-platform-tenant" placeholder="Tenant UUID" />
+            </div>
+        </div>
+        </div><!-- /network -->
+
+        <div class="tab-panel" data-panel="display">
+        <div class="settings-section">
+            <h2>Display</h2>
+            <div class="gf-field">
+                <label class="gf-label" for="set-brightness">Brightness</label>
+                <input type="range" id="set-brightness" min="10" max="100" value="80" style="width:100%; accent-color: hsl(var(--foreground));" />
+            </div>
+        </div>
+        </div><!-- /display -->
+        </div><!-- /settings-body -->
+
+        <div class="gf-device-info">
+            <div>
+                <div class="gf-title">GridFront Detect</div>
+                <div class="gf-sub">v0.1.0 &middot; Changes save automatically</div>
+            </div>
+            <button class="gf-reset-link" onclick="resetSettings()">Reset to defaults</button>
         </div>
     </div>
 </div>
+<div class="gf-save-toast" id="gf-save-toast">Saved</div>
 
 <script src="/static/three.min.js"></script>
 <script>
@@ -850,9 +1405,284 @@ function toggleSettings() {
         renderModelList();
         renderDetectionGrid();
         loadCameras();
+        loadSettingsFields();
     } else {
         stopCameraPolling();
     }
+}
+
+function switchSettingsTab(name) {
+    var overlay = document.getElementById('settings-overlay');
+    if (!overlay) return;
+    var tabs = overlay.querySelectorAll('.settings-tab');
+    tabs.forEach(function(t) {
+        t.classList.toggle('active', t.getAttribute('data-tab') === name);
+    });
+    var panels = overlay.querySelectorAll('.tab-panel');
+    panels.forEach(function(p) {
+        p.classList.toggle('active', p.getAttribute('data-panel') === name);
+    });
+    // Scroll body back to top when switching tabs so the user
+    // always lands at the top of the new tab's content.
+    var body = overlay.querySelector('.settings-body');
+    if (body) body.scrollTop = 0;
+}
+
+// ── Merged settings form — machine/zones/alerts/conn/platform ──
+// These live on /api/config and /api/machines. The form loads when
+// the overlay opens and persists on Save. Immediate-effect toggles
+// (Debug Mode, Units, Models, Detection Classes, Calibrate) are
+// handled elsewhere and still apply instantly — only the form-style
+// fields go through the Save button.
+var _machineProfiles = {};
+
+function showSaveToast(msg) {
+    var t = document.getElementById('gf-save-toast');
+    if (!t) return;
+    t.textContent = msg || 'Saved';
+    t.classList.add('visible');
+    setTimeout(function() { t.classList.remove('visible'); }, 1400);
+}
+
+function formatMachineLabel(key) {
+    return key.replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+}
+
+function loadMachineProfiles() {
+    return fetch('/api/machines').then(function(r) { return r.json(); }).then(function(data) {
+        _machineProfiles = data || {};
+        var sel = document.getElementById('set-machine-type');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">— Select machine type —</option>';
+        Object.keys(_machineProfiles).forEach(function(key) {
+            var opt = document.createElement('option');
+            opt.value = key;
+            opt.textContent = formatMachineLabel(key);
+            sel.appendChild(opt);
+        });
+    }).catch(function() {});
+}
+
+function onMachineTypePreview() {
+    var key = document.getElementById('set-machine-type').value;
+    var info = document.getElementById('set-machine-info');
+    var profile = _machineProfiles[key];
+    if (!profile) { info.textContent = ''; return; }
+    var d = profile.dimensions || {};
+    var parts = [];
+    if (profile.example_model) parts.push(profile.example_model);
+    if (d.length_m || d.width_m || d.height_m) {
+        parts.push((d.length_m || '?') + 'L × ' + (d.width_m || '?') + 'W × ' + (d.height_m || '?') + 'H m');
+    }
+    info.textContent = parts.join(' · ');
+}
+
+function applyMachineProfile() {
+    var key = document.getElementById('set-machine-type').value;
+    if (!key) return;
+    fetch('/api/machines/' + encodeURIComponent(key) + '/activate', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(res) {
+            if (res && res.zones) {
+                if (res.zones.danger_m != null)   document.getElementById('set-zone-danger').value = res.zones.danger_m;
+                if (res.zones.warning_m != null)  document.getElementById('set-zone-warning').value = res.zones.warning_m;
+                if (res.zones.max_range_m != null) document.getElementById('set-zone-max').value = res.zones.max_range_m;
+            }
+            showSaveToast('Profile applied');
+        })
+        .catch(function() {});
+}
+
+function onConnModeChange() {
+    var mode = document.getElementById('set-conn-mode').value;
+    document.getElementById('set-wifi-fields').style.display = (mode === 'wifi') ? 'block' : 'none';
+    document.getElementById('set-sim-fields').style.display  = (mode === 'sim')  ? 'block' : 'none';
+}
+
+function loadSettingsFields() {
+    // Fetch machine profiles + current config in parallel, then fill
+    // the form. Done every time the overlay opens so changes made via
+    // other tabs (or the platform push config later) are reflected.
+    Promise.all([
+        loadMachineProfiles(),
+        fetch('/api/config').then(function(r) { return r.json(); }),
+    ]).then(function(results) {
+        var cfg = results[1] || {};
+        var mt = document.getElementById('set-machine-type');
+        if (mt) {
+            mt.value = cfg.machine_type || '';
+            onMachineTypePreview();
+        }
+        var nameEl = document.getElementById('set-machine-name');
+        if (nameEl) nameEl.value = cfg.machine_name || '';
+
+        var z = cfg.zones || {};
+        var dEl = document.getElementById('set-zone-danger');
+        var wEl = document.getElementById('set-zone-warning');
+        var mEl = document.getElementById('set-zone-max');
+        if (dEl) dEl.value = z.danger_m != null ? z.danger_m : 3.5;
+        if (wEl) wEl.value = z.warning_m != null ? z.warning_m : 6.0;
+        if (mEl) mEl.value = z.max_range_m != null ? z.max_range_m : 12.0;
+
+        var a = cfg.alerts || {};
+        var soundToggle = document.getElementById('set-sound-enabled');
+        if (soundToggle) {
+            if (a.sound_enabled) soundToggle.classList.add('active');
+            else soundToggle.classList.remove('active');
+        }
+        var sdEl = document.getElementById('set-sound-danger');
+        if (sdEl) sdEl.value = a.danger_sound || 'alarm';
+        var swEl = document.getElementById('set-sound-warning');
+        if (swEl) swEl.value = a.warning_sound || 'chime';
+
+        var c = cfg.connectivity || {};
+        var cmEl = document.getElementById('set-conn-mode');
+        if (cmEl) cmEl.value = c.mode || 'wifi';
+        var wsEl = document.getElementById('set-wifi-ssid');
+        if (wsEl) wsEl.value = c.wifi_ssid || '';
+        var wpEl = document.getElementById('set-wifi-pass');
+        if (wpEl) wpEl.value = c.wifi_password || '';
+        var apEl = document.getElementById('set-sim-apn');
+        if (apEl) apEl.value = c.apn || '';
+        onConnModeChange();
+
+        var p = cfg.platform || {};
+        var puEl = document.getElementById('set-platform-url');
+        if (puEl) puEl.value = p.url || '';
+        var pkEl = document.getElementById('set-platform-key');
+        if (pkEl) pkEl.value = p.api_key || '';
+        var ptEl = document.getElementById('set-platform-tenant');
+        if (ptEl) ptEl.value = p.tenant_id || '';
+
+        var disp = cfg.display || {};
+        var brEl = document.getElementById('set-brightness');
+        if (brEl) brEl.value = disp.brightness != null ? disp.brightness : 80;
+
+        // Wire auto-save after fields are populated so the initial
+        // load doesn't trigger a redundant POST.
+        bindAutoSave();
+    }).catch(function() {});
+}
+
+// ── Auto-save ────────────────────────────────────────────
+// Every change to a settings field is POSTed to /api/config
+// after a short debounce. No explicit Save button — users
+// just edit and walk away. Toast confirms the write.
+var _autoSaveTimer = null;
+var _autoSaveInFlight = false;
+
+function _val(id, fallback) {
+    var el = document.getElementById(id);
+    return el ? el.value : fallback;
+}
+
+function _buildConfigPayload() {
+    return {
+        machine_name: _val('set-machine-name', ''),
+        machine_type: _val('set-machine-type', ''),
+        zones: {
+            danger_m: parseFloat(_val('set-zone-danger', '3.5')) || 3.5,
+            warning_m: parseFloat(_val('set-zone-warning', '6.0')) || 6.0,
+            max_range_m: parseFloat(_val('set-zone-max', '12.0')) || 12.0,
+        },
+        alerts: {
+            sound_enabled: (function() {
+                var el = document.getElementById('set-sound-enabled');
+                return el ? el.classList.contains('active') : false;
+            })(),
+            danger_sound: _val('set-sound-danger', 'alarm'),
+            warning_sound: _val('set-sound-warning', 'chime'),
+        },
+        connectivity: {
+            mode: _val('set-conn-mode', 'wifi'),
+            wifi_ssid: _val('set-wifi-ssid', ''),
+            wifi_password: _val('set-wifi-pass', ''),
+            apn: _val('set-sim-apn', ''),
+        },
+        platform: {
+            url: _val('set-platform-url', ''),
+            api_key: _val('set-platform-key', ''),
+            tenant_id: _val('set-platform-tenant', ''),
+        },
+        display: {
+            theme: 'dark',
+            brightness: parseInt(_val('set-brightness', '80'), 10) || 80,
+        },
+    };
+}
+
+function saveSettings() {
+    // Immediate, non-debounced save. Used by Reset.
+    return fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(_buildConfigPayload()),
+    }).then(function(r) { return r.json(); }).then(function() {
+        showSaveToast('Saved');
+    }).catch(function() {
+        showSaveToast('Save failed');
+    });
+}
+
+function autoSaveSettings() {
+    // Debounced save triggered by input/change events.
+    if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+    _autoSaveTimer = setTimeout(function() {
+        if (_autoSaveInFlight) return;
+        _autoSaveInFlight = true;
+        fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(_buildConfigPayload()),
+        }).then(function(r) { return r.json(); }).then(function() {
+            _autoSaveInFlight = false;
+            showSaveToast('Saved');
+        }).catch(function() {
+            _autoSaveInFlight = false;
+            showSaveToast('Save failed');
+        });
+    }, 500);
+}
+
+function bindAutoSave() {
+    // Wire every settings input to the debounced auto-save.
+    // Idempotent — safe to call multiple times because we mark
+    // elements with a data attribute after binding.
+    var ids = [
+        'set-machine-name', 'set-machine-type',
+        'set-zone-danger', 'set-zone-warning', 'set-zone-max',
+        'set-sound-danger', 'set-sound-warning',
+        'set-conn-mode', 'set-wifi-ssid', 'set-wifi-pass', 'set-sim-apn',
+        'set-platform-url', 'set-platform-key', 'set-platform-tenant',
+        'set-brightness',
+    ];
+    ids.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el || el.dataset.autosaveBound) return;
+        el.dataset.autosaveBound = '1';
+        el.addEventListener('input', autoSaveSettings);
+        el.addEventListener('change', autoSaveSettings);
+    });
+}
+
+function resetSettings() {
+    if (!confirm('Reset all settings to defaults? This clears machine profile, zones, connectivity, and platform credentials.')) return;
+    fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            machine_name: '',
+            machine_type: '',
+            zones: { danger_m: 3.5, warning_m: 6.0, max_range_m: 12.0 },
+            alerts: { sound_enabled: false, danger_sound: 'alarm', warning_sound: 'chime' },
+            connectivity: { mode: 'wifi', wifi_ssid: '', wifi_password: '', apn: '' },
+            platform: { url: '', api_key: '', tenant_id: '' },
+            display: { theme: 'dark', brightness: 80 },
+        }),
+    }).then(function() {
+        loadSettingsFields();
+        showSaveToast('Reset');
+    });
 }
 
 // ── Cameras panel (magnetic mount + calibrate) ─────────────
@@ -860,7 +1690,7 @@ var _camerasPollTimer = null;
 
 function _calStateColor(state) {
     switch (state) {
-        case 'nominal': return '#22c55e';
+        case 'nominal': return '#737373';
         case 'warn':    return '#f59e0b';
         case 'bumped':
         case 'imu_lost': return '#ef4444';
@@ -890,7 +1720,7 @@ function loadCameras() {
         if (!container) return;
         if (!cams.length) {
             container.innerHTML =
-                '<div style="font-size:12px; color:#777;">' +
+                '<div style="font-size:13px; color: hsl(var(--muted-foreground));">' +
                 'No cameras installed. Connect an OAK-D Pro W PoE camera to the ' +
                 'machine network and it will appear here.' +
                 '</div>';
@@ -900,14 +1730,14 @@ function loadCameras() {
             var id = cam.id;
             return (
                 '<div id="cam-row-' + id + '" ' +
-                     'style="padding:12px 14px; background:#141414; border:1px solid #2a2a2a; border-radius:8px; display:flex; flex-direction:column; gap:8px;">' +
+                     'style="padding:16px; background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); display:flex; flex-direction:column; gap:10px;">' +
                     '<div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">' +
-                        '<div>' +
-                            '<div style="font-size:14px; font-weight:600; color:#eee; display:flex; align-items:center; gap:8px;">' +
-                                '<span id="cam-dot-' + id + '" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#6b7280;"></span>' +
+                        '<div style="min-width:0;">' +
+                            '<div style="font-size:14px; font-weight:600; color: hsl(var(--foreground)); display:flex; align-items:center; gap:8px; letter-spacing:-0.01em;">' +
+                                '<span id="cam-dot-' + id + '" style="display:inline-block; width:8px; height:8px; border-radius:50%; background: hsl(var(--muted-foreground));"></span>' +
                                 (cam.label || id) +
                             '</div>' +
-                            '<div style="font-size:11px; color:#777; margin-top:2px;">' +
+                            '<div style="font-size:12px; color: hsl(var(--muted-foreground)); margin-top:4px; font-variant-numeric: tabular-nums;">' +
                                 (cam.device_id || 'no device') +
                                 ' · pos [' + (cam.position_m || [0,0,0]).join(', ') + ']' +
                                 ' · yaw ' + (cam.yaw_deg || 0) + '°' +
@@ -915,10 +1745,9 @@ function loadCameras() {
                             '</div>' +
                         '</div>' +
                         '<button class="btn-primary" id="cam-cal-btn-' + id + '" ' +
-                                'onclick="startCalibrate(\'' + id + '\')" ' +
-                                'style="padding:8px 16px; font-size:12px; font-weight:600;">Calibrate</button>' +
+                                'onclick="startCalibrate(\'' + id + '\')">Calibrate</button>' +
                     '</div>' +
-                    '<div id="cam-status-' + id + '" style="font-size:11px; color:#888;">—</div>' +
+                    '<div id="cam-status-' + id + '" style="font-size:12px; color: hsl(var(--muted-foreground));">—</div>' +
                 '</div>'
             );
         }).join('');
