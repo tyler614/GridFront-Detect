@@ -65,6 +65,12 @@ PPE_LABELS = [
     "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle",
 ]
 
+# ── GridFront Detect V1 labels (custom-trained) ─────────────────────────
+GRIDFRONT_V1_LABELS = [
+    "person", "excavator", "wheel-loader", "dozer", "crane",
+    "dump-truck", "grader", "compactor", "cone",
+]
+
 
 # ── Available models ────────────────────────────────────────────────────
 MODELS: dict[str, ModelDef] = {}
@@ -122,6 +128,18 @@ _register(ModelDef(
     classes=["fire"],
     input_size=(416, 416),
     description="Detects fire and flames. Useful for equipment fire safety.",
+))
+
+# -- GridFront Detect V1 (custom, in-house construction equipment) --
+_register(ModelDef(
+    id="gridfront-detect-v1",
+    name="GridFront Detect V1 (Construction)",
+    slug="",  # local blob, slug unused
+    classes=GRIDFRONT_V1_LABELS,
+    input_size=(512, 288),
+    description="In-house YOLOv8n trained on construction equipment. 9 classes.",
+    source="local",
+    blob_path="models/gridfront-detect-v1.blob",
 ))
 
 # -- YOLOv6 Large COCO (highest accuracy, slower) --

@@ -37,6 +37,8 @@ freecad_to_stl.py
 
 # Model blobs (too large for git)
 models/*.blob
+# Exception: GridFront in-house V1 blob is small (~6 MB), tracked in repo
+!models/gridfront-detect-v1.blob
 
 # Temp
 fix_network.ps1
