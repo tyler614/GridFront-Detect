@@ -25,8 +25,14 @@ import sys
 
 import depthai as dai
 
-from pipeline.model_registry import COCO_LABELS, get_default_model
+from pipeline.model_registry import COCO_LABELS, get_model
 from pipeline.standalone.script_runtime import SCRIPT_SOURCE
+
+# Standalone needs a model whose weights are pullable by the camera at
+# build time — use the HubAI-hosted YOLO that the live pipeline already
+# runs. Local-blob models would require shipping the .blob into flash via
+# the NNArchive path; punt that until standalone basics are validated.
+_STANDALONE_MODEL_ID = "yolov6n-coco"
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +103,12 @@ def build_pipeline(
     mono_r.out.link(stereo.right)
 
     nn = p.create(dai.node.SpatialDetectionNetwork)
-    model = get_default_model()
+    model = get_model(_STANDALONE_MODEL_ID)
+    if model is None or not model.slug:
+        raise RuntimeError(
+            f"Standalone build needs a HubAI-resolvable model; '{_STANDALONE_MODEL_ID}'"
+            " is missing or has no slug. Update model_registry."
+        )
     nn.build(cam_rgb, stereo, model.slug, fps=fps)
     labels = list(model.classes) if model.classes else COCO_LABELS
 
@@ -131,6 +142,8 @@ def main() -> int:
                         help="Build the pipeline and exit; do not flash.")
     parser.add_argument("--confirm-flash", action="store_true",
                         help="ACK that flashing the OAK is destructive. Required.")
+    parser.add_argument("--oak-ip", default="169.254.1.222",
+                        help="Link-local IP of the PoE OAK to flash.")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -157,7 +170,10 @@ def main() -> int:
     # stop the Flask server first or the connect() below will fail.
     logger.warning("Flashing standalone pipeline to OAK-D onboard flash...")
     try:
-        bootloader = dai.DeviceBootloader(dai.DeviceBootloader.Type.NETWORK)
+        # v3 DeviceBootloader accepts an IP/name string directly — no
+        # DeviceInfo lookup needed for a known PoE address.
+        logger.info("Targeting OAK at %s", args.oak_ip)
+        bootloader = dai.DeviceBootloader(args.oak_ip)
         progress = lambda p: logger.info("flash progress: %.1f%%", p * 100.0)
         success, msg = bootloader.flash(progress, pipeline)
         if not success:
