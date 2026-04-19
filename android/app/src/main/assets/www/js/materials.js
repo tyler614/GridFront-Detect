@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Shared Materials & Helpers
+   GridFront Scout — Shared Materials & Helpers
    ═══════════════════════════════════════════════════════════ */
 window.GF = window.GF || {};
 

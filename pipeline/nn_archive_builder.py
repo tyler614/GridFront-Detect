@@ -16,7 +16,7 @@ sidecar is newer than the cache.
 If you want to skip the runtime build entirely, run this module as a
 script — it will build the archive ahead of time:
 
-    python -m pipeline.nn_archive_builder models/gridfront-detect-v1.blob
+    python -m pipeline.nn_archive_builder models/gridfront-scout-v1.blob
 """
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-# Model Training Guide for GridFront Detection
+# Model Training Guide for GridFront Scoution
 
 ## Quick Overview
 

@@ -139,12 +139,12 @@ def resolve_installed_cameras(config):
 
 @app.route("/")
 def index():
-    # Single-page app: detect.html is the only view. Settings live in a
-    # popup on this same page (see toggleSettings in detect.html). The old
+    # Single-page app: scout.html is the only view. Settings live in a
+    # popup on this same page (see toggleSettings in scout.html). The old
     # /dashboard, /cameras, /alerts, /settings, /radar, /machines templates
     # were removed — everything they did is now either a popup section or
-    # an API endpoint consumed directly by detect.html.
-    return render_template("detect.html")
+    # an API endpoint consumed directly by scout.html.
+    return render_template("scout.html")
 
 
 # ── Spatial API ──────────────────────────────────────────────
@@ -1188,7 +1188,7 @@ if __name__ == "__main__":
     config = load_config()
     machine_type = args.machine or config.get("machine_type", "wheel_loader")
 
-    print(f"[GridFront Detect] Starting — machine: {machine_type}")
+    print(f"[GridFront Scout] Starting — machine: {machine_type}")
 
     # Resolve the physically-installed cameras. installed_cameras in
     # config.json is the source of truth; fall back to synthesising from
@@ -1240,11 +1240,11 @@ if __name__ == "__main__":
     import atexit
 
     def _shutdown(*args):
-        print("\n[GridFront Detect] Shutting down — releasing camera...")
+        print("\n[GridFront Scout] Shutting down — releasing camera...")
         if _pipeline_runner is not None:
             _pipeline_runner.stop()
         display_broadcaster.stop()
-        print("[GridFront Detect] Camera released. Goodbye.")
+        print("[GridFront Scout] Camera released. Goodbye.")
         raise SystemExit(0)
 
     atexit.register(lambda: _pipeline_runner.stop() if _pipeline_runner else None)

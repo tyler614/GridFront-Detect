@@ -1,4 +1,4 @@
-package io.gridfront.detect
+package io.gridfront.scout
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -26,7 +26,7 @@ class WebServerService : Service() {
 
     companion object {
         private const val TAG = "GF_Service"
-        private const val CHANNEL_ID = "gridfront_detect"
+        private const val CHANNEL_ID = "gridfront_scout"
         private const val NOTIFICATION_ID = 1
         private const val HEALTH_URL = "http://127.0.0.1:5555/api/system/health"
         private const val POLL_INTERVAL_MS = 5000L
@@ -128,7 +128,7 @@ class WebServerService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "GridFront Detect",
+                "GridFront Scout",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "Detection pipeline status"
@@ -140,7 +140,7 @@ class WebServerService : Service() {
 
     private fun buildNotification(statusText: String = "Proximity detection active"): Notification {
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("GridFront Detect")
+            .setContentTitle("GridFront Scout")
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setOngoing(true)

@@ -1,4 +1,4 @@
-package io.gridfront.detect
+package io.gridfront.scout
 
 import android.app.ActivityManager
 import android.app.admin.DevicePolicyManager
@@ -24,7 +24,7 @@ import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * Main Activity — the GridFront Detect kiosk display.
+ * Main Activity — the GridFront Scout kiosk display.
  *
  * Runs a full-screen WebView pointing to the bundled radar UI served from
  * assets/www/. When Device Owner is enabled, locks the device into this
@@ -91,7 +91,7 @@ class MainActivity : AppCompatActivity() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
-            "gridfront:detect"
+            "gridfront:scout"
         ).apply { acquire() }
 
         // Start detection service
@@ -102,7 +102,7 @@ class MainActivity : AppCompatActivity() {
             startService(serviceIntent)
         }
 
-        Log.i(TAG, "GridFront Detect started")
+        Log.i(TAG, "GridFront Scout started")
         Log.i(TAG, "Device Owner: ${isDeviceOwner()}")
     }
 
@@ -212,7 +212,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupKioskMode() {
         if (!isDeviceOwner()) {
-            Log.w(TAG, "Not Device Owner — kiosk lock unavailable. Run: adb shell dpm set-device-owner io.gridfront.detect/.AdminReceiver")
+            Log.w(TAG, "Not Device Owner — kiosk lock unavailable. Run: adb shell dpm set-device-owner io.gridfront.scout/.AdminReceiver")
             return
         }
 

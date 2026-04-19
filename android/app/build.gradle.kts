@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "io.gridfront.detect"
+    namespace = "io.gridfront.scout"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "io.gridfront.detect"
+        applicationId = "io.gridfront.scout"
         minSdk = 28
         targetSdk = 34
         versionCode = 1

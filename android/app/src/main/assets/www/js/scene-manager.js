@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Scene Manager
+   GridFront Scout — Scene Manager
    Three.js scene setup: renderer, camera, lighting, ground, grid, zone rings
    ═══════════════════════════════════════════════════════════ */
 window.GF = window.GF || {};

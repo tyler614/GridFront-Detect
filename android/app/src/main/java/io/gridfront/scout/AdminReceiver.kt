@@ -1,4 +1,4 @@
-package io.gridfront.detect
+package io.gridfront.scout
 
 import android.app.admin.DeviceAdminReceiver
 import android.content.ComponentName

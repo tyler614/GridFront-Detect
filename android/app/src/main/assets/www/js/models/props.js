@@ -1,5 +1,5 @@
 /**
- * props.js — Traffic props models for GridFront Detect
+ * props.js — Traffic props models for GridFront Scout
  * Traffic cone, jersey barrier, delineator post, exclusion fence
  * Uses shared GF material palette and helper functions.
  */

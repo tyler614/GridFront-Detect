@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Camera Placement Editor
+   GridFront Scout — Camera Placement Editor
    2D top-down drag-and-drop camera placement with FOV cones,
    perimeter snapping, coverage analysis, and calibration.
    Registers as GF.cameraPlacement with open() / close().

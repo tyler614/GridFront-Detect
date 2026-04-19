@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Person Model
+   GridFront Scout — Person Model
    Procedural Three.js construction-worker figure with PPE.
    ~1.8 m tall, 7.5-head proportions, <800 triangles.
    ═══════════════════════════════════════════════════════════ */

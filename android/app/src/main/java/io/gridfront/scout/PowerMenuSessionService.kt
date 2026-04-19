@@ -1,4 +1,4 @@
-package io.gridfront.detect
+package io.gridfront.scout
 
 import android.os.Bundle
 import android.service.voice.VoiceInteractionSession

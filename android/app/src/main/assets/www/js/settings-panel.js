@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Settings Panel
+   GridFront Scout — Settings Panel
    Full-screen overlay with sections for machine type, zone
    distances, detection classes, and camera management.
    Registers as GF.settings with open() / close() methods.

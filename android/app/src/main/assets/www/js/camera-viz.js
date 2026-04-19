@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Camera Visualization
+   GridFront Scout — Camera Visualization
    Renders camera icons and FOV frustum cones in the 3D scene.
    ═══════════════════════════════════════════════════════════ */
 

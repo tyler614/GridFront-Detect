@@ -1,10 +1,10 @@
-"""Download public Roboflow Universe datasets and upload to GridFront Detect project.
+"""Download public Roboflow Universe datasets and upload to GridFront Scout project.
 
 Handles label remapping so all datasets use a unified class taxonomy.
 Uploads images + YOLO annotations via the Roboflow REST API.
 
 Usage:
-    python import_datasets.py --api-key YOUR_KEY --project gridfront-detect
+    python import_datasets.py --api-key YOUR_KEY --project gridfront-scout
 """
 
 import argparse
@@ -19,7 +19,7 @@ from pathlib import Path
 import requests
 
 # ---------------------------------------------------------------------------
-# GridFront Detect unified class taxonomy
+# GridFront Scout unified class taxonomy
 # ---------------------------------------------------------------------------
 # Each source dataset maps its labels → these canonical names.
 # Labels mapped to None are dropped (irrelevant classes).
@@ -649,9 +649,9 @@ def process_dataset(
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="Import datasets to GridFront Detect")
+    parser = argparse.ArgumentParser(description="Import datasets to GridFront Scout")
     parser.add_argument("--api-key", required=True, help="Roboflow API key")
-    parser.add_argument("--project", default="gridfront-detect", help="Roboflow project ID")
+    parser.add_argument("--project", default="gridfront-scout", help="Roboflow project ID")
     parser.add_argument("--download-dir", default="training/downloads", help="Where to cache downloads")
     parser.add_argument("--dry-run", action="store_true", help="Remap labels but don't upload")
     parser.add_argument("--only", type=str, help="Only process this dataset (project slug)")

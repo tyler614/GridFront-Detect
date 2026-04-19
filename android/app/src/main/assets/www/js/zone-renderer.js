@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Zone Renderer
+   GridFront Scout — Zone Renderer
    Config-reactive zone rings with breach animation.
    Depends on: scene-manager.js
    ═══════════════════════════════════════════════════════════ */

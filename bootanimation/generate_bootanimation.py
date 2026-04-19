@@ -1,4 +1,4 @@
-"""GridFront Detect boot animation — unified boot experience on black.
+"""GridFront Scout boot animation — unified boot experience on black.
 
 Design:
   Black background. Official horizontal GridFront logo (9-square grid +
@@ -38,7 +38,7 @@ BAR_H = 6
 BAR_RADIUS = 3
 BAR_X = (W - BAR_W) // 2
 
-STATUS_TEXT = "Starting GridFront Detect"
+STATUS_TEXT = "Starting GridFront Scout"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

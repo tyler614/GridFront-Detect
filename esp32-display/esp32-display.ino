@@ -1,6 +1,6 @@
-// GridFront Detect — ESP32-S3 cab display firmware
+// GridFront Scout — ESP32-S3 cab display firmware
 // Target: LilyGo T4-S3 (2.41" AMOLED, RM690B0 QSPI, ESP32-S3R8 + 8MB PSRAM)
-// Receives detection UDP from the Detect Flask server and renders a radar view.
+// Receives detection UDP from the Scout Flask server and renders a radar view.
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -306,9 +306,9 @@ static void draw_brand_splash() {
   gfx->print("GridFront");
   gfx->setFont(&FreeSans9pt7b);
   gfx->setTextColor(C_TEXT_DIM);
-  gfx->getTextBounds("Detect", 0, 0, &tx, &ty, &tw, &th);
+  gfx->getTextBounds("Scout", 0, 0, &tx, &ty, &tw, &th);
   gfx->setCursor((LCD_WIDTH - tw) / 2, MCY + 110);
-  gfx->print("Detect");
+  gfx->print("Scout");
   gfx->flush();
 }
 

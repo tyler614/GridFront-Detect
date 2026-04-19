@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — HUD Controller
+   GridFront Scout — HUD Controller
    HUD DOM updates, alert banner logic, connection status
    ═══════════════════════════════════════════════════════════ */
 window.GF = window.GF || {};

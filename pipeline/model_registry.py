@@ -65,7 +65,7 @@ PPE_LABELS = [
     "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle",
 ]
 
-# ── GridFront Detect V1 labels (custom-trained) ─────────────────────────
+# ── GridFront Scout V1 labels (custom-trained) ─────────────────────────
 GRIDFRONT_V1_LABELS = [
     "person", "excavator", "wheel-loader", "dozer", "crane",
     "dump-truck", "grader", "compactor", "cone",
@@ -90,21 +90,21 @@ _register(ModelDef(
     description="Fastest general model. 80 COCO classes, ~64 FPS on Myriad X.",
 ))
 
-# -- GridFront Detect V1 (custom, in-house construction equipment) --
+# -- GridFront Scout V1 (custom, in-house construction equipment) --
 _register(ModelDef(
-    id="gridfront-detect-v1",
-    name="GridFront Detect V1",
+    id="gridfront-scout-v1",
+    name="GridFront Scout V1",
     slug="",  # local blob, slug unused
     classes=GRIDFRONT_V1_LABELS,
     input_size=(512, 288),
     description="In-house YOLOv8n trained on construction equipment. 9 classes.",
     source="local",
-    blob_path="models/gridfront-detect-v1.blob",
+    blob_path="models/gridfront-scout-v1.blob",
 ))
 
 
 # ── Default model ───────────────────────────────────────────────────────
-DEFAULT_MODEL_ID = "gridfront-detect-v1"
+DEFAULT_MODEL_ID = "gridfront-scout-v1"
 
 
 def get_model(model_id: str) -> ModelDef | None:

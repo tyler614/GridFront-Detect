@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Config Manager
+   GridFront Scout — Config Manager
    Local config layer using localStorage. Intercepts GF.api
    calls so the app works fully offline without Flask.
 

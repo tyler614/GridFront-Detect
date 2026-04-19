@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Excavator Model (CAT 320 style)
+   GridFront Scout — Excavator Model (CAT 320 style)
    Depends on: materials.js (GF.mk, GF.mkr, GF.rbox, GF.bodyMat, GF.darkMat, GF.glassMat, GF.metalMat, GF.frameMat)
    ═══════════════════════════════════════════════════════════ */
 window.GF = window.GF || {};

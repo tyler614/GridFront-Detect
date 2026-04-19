@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — App Entry Point
+   GridFront Scout — App Entry Point
    Animation loop glue. Depends on all other GF modules.
    ═══════════════════════════════════════════════════════════ */
 (function() {

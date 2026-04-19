@@ -27,7 +27,7 @@ from pipeline.standalone.build_standalone import build_pipeline
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_DAP_PATH = r"C:\Users\helve\detect.gridfront.io\pipeline\standalone\gridfront-detect.dap"
+DEFAULT_DAP_PATH = r"C:\Users\helve\scout.gridfront.io\pipeline\standalone\gridfront-scout.dap"
 
 
 def main() -> int:
@@ -63,7 +63,7 @@ def main() -> int:
 
         logger.info("Saving .dap to %s ...", args.dap)
         dai.DeviceBootloader.saveDepthaiApplicationPackage(
-            args.dap, pipeline, True, "gridfront-detect"
+            args.dap, pipeline, True, "gridfront-scout"
         )
         logger.info("Saved %d bytes.", os.path.getsize(args.dap))
 

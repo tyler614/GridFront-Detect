@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Dozer Model (CAT D6 style)
+   GridFront Scout — Dozer Model (CAT D6 style)
    Depends on: materials.js (GF.mk, GF.mkr, GF.rbox, GF.bodyMat, GF.darkMat, GF.glassMat, GF.metalMat, GF.frameMat)
    Dimensions: L 4.7m  W 2.7m  H 3.1m — under 1500 triangles
    ═══════════════════════════════════════════════════════════ */

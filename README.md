@@ -1,4 +1,4 @@
-# GridFront Detect
+# GridFront Scout
 
 Android kiosk app for the Oukitel RT3 Pro tablet.
 Displays a real-time radar view of detected persons around industrial equipment.

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Wheel Loader Model (CAT 950 GC)
+   GridFront Scout — Wheel Loader Model (CAT 950 GC)
    HOST MACHINE — darker material palette
    Proportions: L:8.4m W:2.5m H:3.4m at cab (1:1 scale meters)
    Depends on: materials.js (GF.mk, GF.mkr, GF.rbox, GF.mkWheel)

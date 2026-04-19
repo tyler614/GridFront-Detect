@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Orbit Controls
+   GridFront Scout — Orbit Controls
    Camera orbit via touch/mouse/wheel
    Depends on: scene-manager.js (GF.scene.renderer, GF.scene.camera)
    ═══════════════════════════════════════════════════════════ */

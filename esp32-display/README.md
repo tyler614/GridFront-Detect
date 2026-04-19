@@ -1,6 +1,6 @@
-# GridFront Detect — ESP32 Cab Display
+# GridFront Scout — ESP32 Cab Display
 
-Firmware for the **LilyGo T4-S3** (2.41" AMOLED) that mirrors the radar view from the Detect Flask app. Receives detection packets over UDP and renders them on the AMOLED; HTTP-registers itself with the server so the server knows where to send packets.
+Firmware for the **LilyGo T4-S3** (2.41" AMOLED) that mirrors the radar view from the Scout Flask app. Receives detection packets over UDP and renders them on the AMOLED; HTTP-registers itself with the server so the server knows where to send packets.
 
 ## One-time setup
 

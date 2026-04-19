@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Dump Truck Model (CAT 740 style)
+   GridFront Scout — Dump Truck Model (CAT 740 style)
    Articulated dump truck: L~10.6m, W~3.5m, H~3.7m
    Depends on: materials.js (GF.mk, GF.mkr, GF.rbox, GF.mkWheel, GF.bodyMat, GF.darkMat, GF.glassMat, GF.metalMat, GF.frameMat)
    ═══════════════════════════════════════════════════════════ */

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Detection Renderer
+   GridFront Scout — Detection Renderer
    Live data integration: SSE → polling → mock fallback
    Mock mode simulates realistic OAK-D spatial pipeline output.
    Depends on: scene-manager.js, model-registry.js, api-client.js

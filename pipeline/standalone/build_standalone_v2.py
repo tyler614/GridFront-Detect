@@ -7,7 +7,7 @@ where the bindings work, and uses a local YOLO .blob instead of a HubAI
 slug so the pipeline can be built offline — no pre-flash device session
 required, so no serialize-RPC-on-closed-device segfault.
 
-Usage (from detect.gridfront.io root, with the 2.x venv active):
+Usage (from scout.gridfront.io root, with the 2.x venv active):
 
     .venv2x/Scripts/python.exe -m pipeline.standalone.build_standalone_v2 \\
         --dest-ip 169.254.1.56 --dest-port 5556 --confirm-flash
@@ -32,8 +32,8 @@ from pipeline.standalone.script_runtime import SCRIPT_SOURCE
 logger = logging.getLogger(__name__)
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_BLOB = REPO / "models" / "gridfront-detect-v1.blob"
-DEFAULT_MODEL_JSON = REPO / "models" / "gridfront-detect-v1.json"
+DEFAULT_BLOB = REPO / "models" / "gridfront-scout-v1.blob"
+DEFAULT_MODEL_JSON = REPO / "models" / "gridfront-scout-v1.json"
 
 _SAFETY_LABEL_NAMES = {"person", "excavator", "wheel-loader", "dozer",
                        "crane", "dump-truck", "grader", "compactor"}
@@ -165,7 +165,7 @@ def main() -> int:
                     help="Flash the baked pipeline. Without this flag, the "
                          "script dry-runs: builds, saves .dap, and exits.")
     ap.add_argument("--oak-ip",        default="169.254.1.222")
-    ap.add_argument("--dap",           default=str(REPO / "pipeline" / "standalone" / "gridfront-detect-v2.dap"))
+    ap.add_argument("--dap",           default=str(REPO / "pipeline" / "standalone" / "gridfront-scout-v2.dap"))
     ap.add_argument("--calib",         default=str(REPO / "calib_oak.json"),
                     help="Calibration JSON to embed (required — stereo crashes without it in standalone)")
     args = ap.parse_args()
@@ -195,7 +195,7 @@ def main() -> int:
                 args.dest_ip, args.dest_port, args.danger_m, args.warning_m)
 
     logger.info("Saving .dap sidecar to %s ...", args.dap)
-    dai.DeviceBootloader.saveDepthaiApplicationPackage(args.dap, pipeline, True, "gridfront-detect")
+    dai.DeviceBootloader.saveDepthaiApplicationPackage(args.dap, pipeline, True, "gridfront-scout")
     logger.info("Saved (%d bytes).", Path(args.dap).stat().st_size)
 
     if not args.confirm_flash:
@@ -230,7 +230,7 @@ def main() -> int:
     try:
         logger.info("Flashing pipeline (compressed)...")
         progress = lambda pct: logger.info("flash progress: %.1f%%", pct * 100.0)
-        ok, msg = bl.flash(progress, pipeline, compress=True, applicationName="gridfront-detect")
+        ok, msg = bl.flash(progress, pipeline, compress=True, applicationName="gridfront-scout")
         if not ok:
             logger.error("Flash failed: %s", msg)
             return 1

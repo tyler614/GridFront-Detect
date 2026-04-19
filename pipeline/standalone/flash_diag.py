@@ -11,7 +11,7 @@ Script always sends UDP heartbeats at 2 pps regardless of input. If heartbeats
 arrive on the tablet, that stage booted. If silence, that stage's new node
 crashed the pipeline during init.
 
-Usage (OAK in BOOTLOADER, from detect.gridfront.io root, 2.x venv):
+Usage (OAK in BOOTLOADER, from scout.gridfront.io root, 2.x venv):
   .venv2x/Scripts/python.exe -m pipeline.standalone.flash_diag \\
       --stage cam --dest-ip 169.254.1.56 --dest-port 5556
 """
@@ -29,8 +29,8 @@ import depthai as dai
 logger = logging.getLogger(__name__)
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_BLOB = REPO / "models" / "gridfront-detect-v1.blob"
-DEFAULT_MODEL_JSON = REPO / "models" / "gridfront-detect-v1.json"
+DEFAULT_BLOB = REPO / "models" / "gridfront-scout-v1.blob"
+DEFAULT_MODEL_JSON = REPO / "models" / "gridfront-scout-v1.json"
 
 HEARTBEAT_SRC = r"""
 import socket

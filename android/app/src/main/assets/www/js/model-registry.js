@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — Model Registry
+   GridFront Scout — Model Registry
    GLTF loader, model cache, createObject()
    Depends on: scene-manager.js, materials.js, all model files
    ═══════════════════════════════════════════════════════════ */

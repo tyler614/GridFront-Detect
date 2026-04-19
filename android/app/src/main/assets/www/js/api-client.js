@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   GridFront Detect — API Client
+   GridFront Scout — API Client
    Talks to the Flask backend via the LocalAssetServer proxy.
    All /api/* calls go through the same origin (port 8080)
    and are forwarded to Flask on port 5555.

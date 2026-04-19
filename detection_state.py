@@ -1,5 +1,5 @@
 """
-GridFront Detect — Shared Detection State
+GridFront Scout — Shared Detection State
 Thread-safe state management for detections and camera health.
 """
 

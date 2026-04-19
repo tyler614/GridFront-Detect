@@ -26,7 +26,7 @@
         android:fillColor="#3CABD6"/>
     <path android:pathData="M57,52h8a2,2 0,0 1,2 2v4a2,2 0,0 1,-2 2h-8a2,2 0,0 1,-2 -2v-4a2,2 0,0 1,2 -2z"
         android:fillColor="#90D2E8"/>
-    <!-- Detect accent: radar sweep + detection dot -->
+    <!-- Scout accent: radar sweep + detection dot -->
     <path android:pathData="M70,42L76,36"
         android:strokeColor="#3CABD6"
         android:strokeWidth="1.5"/>
