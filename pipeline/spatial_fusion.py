@@ -85,6 +85,22 @@ class SpatialFusion:
         T[2, 3] = position[2]
         return T
 
+    def update_transform(
+        self, camera_id: str, position: List[float], rotation_deg: List[float]
+    ) -> None:
+        """Replace the mount transform for one camera at runtime.
+
+        Called from PipelineRunner.update_camera_pose() when the operator
+        edits a camera's position/rotation in the visual zone editor. The
+        next call to ``transform_detections`` for that camera will project
+        through the new matrix — no pipeline restart required.
+        """
+        self.transforms[camera_id] = self._build_transform(position, rotation_deg)
+        logger.info(
+            "SpatialFusion transform updated for camera '%s' → pos=%s rot=%s",
+            camera_id, position, rotation_deg,
+        )
+
     # ------------------------------------------------------------------
     # Per-camera transform
     # ------------------------------------------------------------------

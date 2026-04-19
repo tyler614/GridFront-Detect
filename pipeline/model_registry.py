@@ -90,50 +90,10 @@ _register(ModelDef(
     description="Fastest general model. 80 COCO classes, ~64 FPS on Myriad X.",
 ))
 
-# -- YOLOv10 Nano COCO (better accuracy, still fast) --
-_register(ModelDef(
-    id="yolov10n-coco",
-    name="YOLOv10 Nano (General)",
-    slug="luxonis/yolov10-nano:coco-512x288",
-    classes=COCO_LABELS,
-    input_size=(512, 288),
-    description="Better accuracy than v6, 80 COCO classes. ~29 FPS on Myriad X.",
-))
-
-# -- PPE / Construction Safety (purpose-built) --
-_register(ModelDef(
-    id="ppe-construction",
-    name="PPE Detection (Construction)",
-    slug="luxonis/ppe-detection:640x640",
-    classes=PPE_LABELS,
-    input_size=(640, 640),
-    description="Construction safety: hardhats, vests, cones, machinery, vehicles. ~13 FPS.",
-))
-
-# -- Person Detection (high-accuracy, single-class) --
-_register(ModelDef(
-    id="scrfd-person",
-    name="Person Detection (SCRFD)",
-    slug="luxonis/scrfd-person-detection:r2-640x640",
-    classes=["person"],
-    input_size=(640, 640),
-    description="High-accuracy person-only detector. Best for people-around-machinery alerts.",
-))
-
-# -- Fire Detection --
-_register(ModelDef(
-    id="fire-detection",
-    name="Fire Detection",
-    slug="luxonis/fire-detection:r2-416x416",
-    classes=["fire"],
-    input_size=(416, 416),
-    description="Detects fire and flames. Useful for equipment fire safety.",
-))
-
 # -- GridFront Detect V1 (custom, in-house construction equipment) --
 _register(ModelDef(
     id="gridfront-detect-v1",
-    name="GridFront Detect V1 (Construction)",
+    name="GridFront Detect V1",
     slug="",  # local blob, slug unused
     classes=GRIDFRONT_V1_LABELS,
     input_size=(512, 288),
@@ -142,19 +102,9 @@ _register(ModelDef(
     blob_path="models/gridfront-detect-v1.blob",
 ))
 
-# -- YOLOv6 Large COCO (highest accuracy, slower) --
-_register(ModelDef(
-    id="yolov6l-coco",
-    name="YOLOv6 Large (General)",
-    slug="luxonis/yolov6-large:r2-coco-512x288",
-    classes=COCO_LABELS,
-    input_size=(512, 288),
-    description="Highest accuracy general model. 80 COCO classes, ~8 FPS on Myriad X.",
-))
-
 
 # ── Default model ───────────────────────────────────────────────────────
-DEFAULT_MODEL_ID = "yolov10n-coco"
+DEFAULT_MODEL_ID = "gridfront-detect-v1"
 
 
 def get_model(model_id: str) -> ModelDef | None:

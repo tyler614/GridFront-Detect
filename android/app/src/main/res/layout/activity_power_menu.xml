@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/power_menu_bg"
+    android:padding="24dp"
+    android:minWidth="280dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="GridFront"
+        android:textColor="#FFFFFF"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.04"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Power options"
+        android:textColor="#9CA3AF"
+        android:textSize="13sp"
+        android:layout_marginBottom="20dp" />
+
+    <Button
+        android:id="@+id/btn_reboot"
+        style="@style/PowerMenuButton"
+        android:text="Restart" />
+
+    <Button
+        android:id="@+id/btn_shutdown"
+        style="@style/PowerMenuButton"
+        android:text="Power off" />
+
+    <Button
+        android:id="@+id/btn_settings"
+        style="@style/PowerMenuButton"
+        android:text="Settings" />
+
+    <Button
+        android:id="@+id/btn_cancel"
+        style="@style/PowerMenuButtonSecondary"
+        android:text="Cancel"
+        android:layout_marginTop="8dp" />
+
+</LinearLayout>

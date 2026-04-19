@@ -17,6 +17,9 @@ __pycache__/
 *.pyc
 .env
 venv/
+.venv/
+.venv2x/
+.venv3x/
 
 # Cache / local data
 .cache/
@@ -39,6 +42,9 @@ freecad_to_stl.py
 models/*.blob
 # Exception: GridFront in-house V1 blob is small (~6 MB), tracked in repo
 !models/gridfront-detect-v1.blob
+# NN archives are derived from .blob + .json at runtime by
+# pipeline.nn_archive_builder — never commit them.
+models/*.tar.xz
 
 # Temp
 fix_network.ps1
@@ -47,3 +53,12 @@ training/downloads/
 training/merged/
 *.pt
 .depthai_cached_models/
+
+# Logs
+*.log
+
+# Flashed pipeline sidecars (rebuildable from source)
+*.dap
+
+# Ad-hoc debug screenshots
+tablet_screenshot.png

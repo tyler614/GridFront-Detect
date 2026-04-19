@@ -165,15 +165,62 @@ def main() -> int:
         logger.info("Dry-run — not flashing. Re-run with --confirm-flash to bake.")
         return 0
 
-    # Flash the assembled pipeline to onboard flash via the bootloader.
-    # NB: this competes with the running Flask pipeline for the device —
-    # stop the Flask server first or the connect() below will fail.
-    logger.warning("Flashing standalone pipeline to OAK-D onboard flash...")
+    # Pipeline construction implicitly connected to the OAK, booting it into
+    # the SDK runtime state. Close that device so the OAK can return to
+    # UNBOOTED state on the next power-cycle — the bootloader attach below
+    # strictly requires UNBOOTED.
+    default_dev = pipeline.getDefaultDevice()
+    if default_dev is not None:
+        logger.info("Closing SDK device connection so bootloader can attach...")
+        default_dev.close()
+
+    import time
+    logger.warning("===================================================")
+    logger.warning("  POWER-CYCLE THE OAK NOW (unplug PoE, wait 3s, replug).")
+    logger.warning("  Waiting up to 240s for it in BOOTLOADER state, post-disappearance...")
+    logger.warning("===================================================")
+
+    info = None
+    deadline = time.time() + 240
+    last_seen_state = None
+    saw_disappearance = False
+    stable_bootloader_since = None
+    while time.time() < deadline:
+        devices = dai.Device.getAllAvailableDevices()
+        candidate = next((d for d in devices if d.name == args.oak_ip), None)
+        if candidate is None:
+            if last_seen_state is not None:
+                saw_disappearance = True
+                stable_bootloader_since = None
+                logger.info("OAK disappeared — waiting for reboot...")
+            last_seen_state = None
+        else:
+            state_str = str(candidate.state)
+            if state_str != last_seen_state:
+                logger.info("OAK visible in state %s", state_str)
+                last_seen_state = state_str
+            if candidate.state == dai.XLinkDeviceState.X_LINK_BOOTLOADER:
+                # Wait until it's been steady in BOOTLOADER for >=3s post-reboot
+                # so we know link-local negotiation is done.
+                if saw_disappearance:
+                    if stable_bootloader_since is None:
+                        stable_bootloader_since = time.time()
+                    elif time.time() - stable_bootloader_since >= 3.0:
+                        info = candidate
+                        break
+            else:
+                stable_bootloader_since = None
+        time.sleep(1.5)
+
+    if info is None:
+        logger.error("Timed out waiting for fresh OAK after power-cycle.")
+        return 1
+
     try:
-        # v3 DeviceBootloader accepts an IP/name string directly — no
-        # DeviceInfo lookup needed for a known PoE address.
-        logger.info("Targeting OAK at %s", args.oak_ip)
-        bootloader = dai.DeviceBootloader(args.oak_ip)
+        logger.info("Found fresh OAK %s in state %s; opening bootloader...",
+                    info.name, info.state)
+        bootloader = dai.DeviceBootloader(info)
+        logger.info("Bootloader attached. Flashing pipeline...")
         progress = lambda p: logger.info("flash progress: %.1f%%", p * 100.0)
         success, msg = bootloader.flash(progress, pipeline)
         if not success:

@@ -43,8 +43,9 @@ UNITS          = "__UNITS__"       # "m" or "ft"
 
 # COCO indices we treat as safety-relevant. Mirror of _SAFETY_LABELS in
 # oak_driver.py — kept in sync at build time, not at runtime, since we
-# can't import the host code from the VPU.
-SAFETY_INDICES = __SAFETY_INDICES_JSON__   # set[int]
+# can't import the host code from the VPU. Stored as list (not set) —
+# MyriadX's stripped Python runtime may not expose set().
+SAFETY_INDICES = __SAFETY_INDICES_JSON__   # list[int]
 
 # ── State ─────────────────────────────────────────────────────────────
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -86,7 +87,7 @@ while True:
         # Standalone has no WorldTracker — assign a transient ID per
         # frame so the cab display has something stable-looking to key
         # off. Real fusion/tracking moves into the OAK firmware later.
-        global next_track_id
+        # No `global` — we're at module scope, not inside a function.
         tid = next_track_id
         next_track_id = (next_track_id + 1) & 0x7fffffff
         detections.append({

@@ -80,6 +80,7 @@
     .pill-clear { background: hsla(0, 0%, 100%, 0.06); color: hsl(var(--muted-foreground)); border: 1px solid hsla(0, 0%, 100%, 0.12); }
     .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
     @keyframes pulse { from { opacity: 1; } to { opacity: 0.4; } }
+    @keyframes gf-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.85); } }
 
     .status-right { display: flex; align-items: center; gap: 12px; font-size: 11px; color: hsl(var(--muted-foreground)); }
     .stat { display: flex; align-items: center; gap: 4px; }
@@ -172,6 +173,24 @@
         background: #000;
         z-index: 1;
     }
+    /* Cab background pulse — applied to #cab-bg-disc by JS when a tracked
+       person is inside a danger or warning zone. Danger pulses faster and
+       harder; warning is calmer so the contrast still tells the operator
+       which one they're looking at. SVG fill animates via CSS. */
+    @keyframes cab-pulse-danger {
+        0%, 100% { fill: #7f1d1d; }
+        50%      { fill: #ef4444; }
+    }
+    @keyframes cab-pulse-warn {
+        0%, 100% { fill: #78350f; }
+        50%      { fill: #f59e0b; }
+    }
+    #cab-bg-disc.cab-bg-danger {
+        animation: cab-pulse-danger 0.7s ease-in-out infinite;
+    }
+    #cab-bg-disc.cab-bg-warn {
+        animation: cab-pulse-warn 1.2s ease-in-out infinite;
+    }
     .cab-spec-label {
         position: absolute; bottom: 14px; left: 0; right: 0;
         text-align: center; font-size: 10px; color: #555;
@@ -218,8 +237,7 @@
     }
     .settings-overlay.open { display: block; }
     .settings-container {
-        max-width: 880px;
-        margin: 32px auto;
+        margin: 40px;
         background: hsl(var(--background));
         border: 1px solid hsl(var(--border));
         border-radius: var(--radius);
@@ -228,7 +246,7 @@
     }
     .settings-header {
         display: flex; align-items: center; justify-content: space-between;
-        padding: 24px 28px 20px;
+        padding: 28px 36px 24px;
         background: hsl(var(--background));
         border-bottom: 1px solid hsl(var(--border));
     }
@@ -298,7 +316,7 @@
     }
 
     .settings-body {
-        padding: 20px 28px 28px;
+        padding: 28px 36px 36px;
     }
     .tab-panel { display: none; }
     .tab-panel.active { display: block; }
@@ -480,6 +498,215 @@
     .gf-device-info .gf-reset-link:hover {
         color: hsl(var(--destructive));
         background: hsl(var(--destructive) / 0.08);
+    }
+
+    /* ── Visual Zone Editor (Phase C) ──────────────────────── */
+    .zone-editor-overlay {
+        position: fixed; inset: 0;
+        background: hsl(var(--background) / 0.75);
+        backdrop-filter: blur(4px);
+        z-index: 800;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+    }
+    .zone-editor-overlay.open { display: flex; }
+    .ze-card {
+        width: 100%;
+        max-width: 1400px;
+        height: 100%;
+        max-height: 860px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        box-shadow: 0 20px 60px hsl(0 0% 0% / 0.18);
+        display: flex; flex-direction: column;
+        overflow: hidden;
+    }
+    .ze-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 22px 28px;
+        border-bottom: 1px solid hsl(var(--border));
+        gap: 16px;
+        flex-shrink: 0;
+    }
+    .ze-title h1 {
+        margin: 0; font-size: 20px; font-weight: 600;
+        color: hsl(var(--foreground)); letter-spacing: -0.01em;
+    }
+    .ze-subtitle {
+        display: block; margin-top: 3px; font-size: 13px;
+        color: hsl(var(--muted-foreground));
+    }
+    .ze-header-right { display: flex; gap: 10px; align-items: center; }
+    .ze-icon-btn {
+        display: flex; align-items: center; gap: 8px;
+        padding: 8px 14px; font-size: 13px; font-weight: 500;
+        background: hsl(var(--background)); color: hsl(var(--foreground));
+        border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+        cursor: pointer; transition: all 0.12s;
+    }
+    .ze-icon-btn svg { width: 16px; height: 16px; }
+    .ze-icon-btn.synced {
+        background: hsl(var(--primary) / 0.08);
+        border-color: hsl(var(--primary));
+        color: hsl(var(--primary));
+    }
+    .ze-icon-btn:hover { background: hsl(var(--muted)); }
+    .ze-icon-btn.synced:hover { background: hsl(var(--primary) / 0.14); }
+    .ze-cam-select { max-width: 180px; }
+
+    .ze-body {
+        flex: 1; display: flex; min-height: 0;
+    }
+
+    /* Sidebars */
+    .ze-side {
+        padding: 20px; gap: 22px;
+        display: flex; flex-direction: column;
+        overflow-y: auto;
+        background: hsl(var(--background));
+    }
+    .ze-side-left  { width: 220px; border-right: 1px solid hsl(var(--border)); }
+    .ze-side-right { width: 280px; border-left:  1px solid hsl(var(--border)); }
+    .ze-side-section { display: flex; flex-direction: column; gap: 10px; }
+    .ze-side-label {
+        font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+        color: hsl(var(--muted-foreground)); font-weight: 600;
+    }
+    .ze-side-btn { width: 100%; padding: 8px 12px; font-size: 13px; }
+    .ze-zone-pills { display: flex; flex-direction: column; gap: 6px; }
+    .ze-zone-pill {
+        padding: 9px 12px; font-size: 13px; font-weight: 500;
+        background: hsl(var(--background)); color: hsl(var(--foreground));
+        border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+        cursor: pointer; text-align: left;
+    }
+    .ze-zone-pill:hover { background: hsl(var(--muted)); }
+    .ze-zone-pill.active.ze-zone-danger {
+        background: hsl(var(--destructive) / 0.1);
+        border-color: hsl(var(--destructive));
+        color: hsl(var(--destructive));
+    }
+    .ze-zone-pill.active.ze-zone-warning {
+        background: hsl(38 92% 50% / 0.1);
+        border-color: hsl(38 92% 50%);
+        color: hsl(38 92% 50%);
+    }
+    .ze-tool-row {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 6px;
+    }
+    .ze-tool {
+        display: flex; align-items: center; justify-content: center;
+        height: 36px;
+        background: hsl(var(--background)); color: hsl(var(--foreground));
+        border: 1px solid hsl(var(--border)); border-radius: var(--radius);
+        cursor: pointer; transition: all 0.1s;
+    }
+    .ze-tool svg { width: 16px; height: 16px; }
+    .ze-tool:hover { background: hsl(var(--muted)); }
+    .ze-tool.active {
+        background: hsl(var(--primary)); color: hsl(var(--primary-foreground));
+        border-color: hsl(var(--primary));
+    }
+    .ze-side-help { font-size: 12px; color: hsl(var(--muted-foreground)); }
+    .ze-side-help ul { padding-left: 16px; margin: 4px 0; line-height: 1.55; }
+    .ze-side-help b { color: hsl(var(--foreground)); font-weight: 600; }
+
+    /* Selected-camera inspector */
+    .ze-cam-inspector-name {
+        font-size: 14px; font-weight: 600;
+        color: hsl(var(--foreground));
+    }
+    .ze-insp-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 10px;
+        align-items: center;
+    }
+    .ze-insp-grid .gf-label { margin: 0; font-size: 11px; }
+    .ze-insp-grid .gf-input { padding: 6px 8px; font-size: 13px; }
+
+    /* Camera preview pane */
+    .ze-preview-frame {
+        position: relative;
+        width: 100%; aspect-ratio: 16 / 9;
+        background: hsl(var(--muted));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        overflow: hidden;
+    }
+    .ze-preview-frame img {
+        width: 100%; height: 100%; object-fit: cover;
+        display: block;
+    }
+    .ze-preview-frame img:not([src]),
+    .ze-preview-frame img[src=""] { display: none; }
+    .ze-preview-empty {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 12px; color: hsl(var(--muted-foreground));
+    }
+    .ze-preview-frame.has-image .ze-preview-empty { display: none; }
+    .ze-coverage-status {
+        font-size: 12px; line-height: 1.55;
+        padding: 12px 14px;
+        background: hsl(var(--muted));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        color: hsl(var(--muted-foreground));
+    }
+    .ze-coverage-status.warn {
+        background: hsl(38 92% 50% / 0.08);
+        border-color: hsl(38 92% 50%);
+        color: hsl(38 92% 30%);
+    }
+    .ze-coverage-status.bad {
+        background: hsl(var(--destructive) / 0.08);
+        border-color: hsl(var(--destructive));
+        color: hsl(var(--destructive));
+    }
+    .ze-coverage-status.good {
+        background: hsl(160 60% 45% / 0.08);
+        border-color: hsl(160 60% 40%);
+        color: hsl(160 60% 30%);
+    }
+
+    /* Canvas */
+    .ze-canvas-wrap {
+        flex: 1; position: relative; min-width: 0;
+        background: hsl(var(--card));
+    }
+    #ze-canvas { display: block; width: 100%; height: 100%; }
+    .ze-readout {
+        position: absolute; bottom: 14px; left: 14px;
+        padding: 8px 14px; font-size: 12px;
+        background: hsl(var(--background) / 0.92);
+        color: hsl(var(--foreground));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        font-variant-numeric: tabular-nums;
+        backdrop-filter: blur(8px);
+        pointer-events: none;
+    }
+    .ze-legend {
+        position: absolute; top: 14px; right: 14px;
+        display: flex; flex-direction: column; gap: 6px;
+        padding: 10px 12px; font-size: 11px;
+        background: hsl(var(--background) / 0.92);
+        color: hsl(var(--muted-foreground));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        backdrop-filter: blur(8px);
+        pointer-events: none;
+    }
+    .ze-legend-item { display: flex; align-items: center; gap: 8px; }
+    .ze-legend-swatch {
+        width: 14px; height: 14px; border-radius: 3px;
+        border: 1px solid hsl(var(--border));
     }
 
     /* Auto-save toast — Toast primitive from platform */
@@ -717,7 +944,7 @@
     .confirm-modal-backdrop {
         position: fixed; inset: 0; background: rgba(0,0,0,0.7);
         display: none; align-items: center; justify-content: center;
-        z-index: 200; backdrop-filter: blur(3px);
+        z-index: 700; backdrop-filter: blur(3px);
     }
     .confirm-modal-backdrop.visible { display: flex; }
     .confirm-modal {
@@ -771,12 +998,23 @@
         display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
     }
     .class-search {
-        flex: 1; min-width: 120px; padding: 6px 10px;
-        background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
-        color: #ccc; font-size: 12px; outline: none;
+        flex: 1; min-width: 160px;
+        padding: 10px 14px;
+        background: hsl(var(--input));
+        border: 1px solid hsl(var(--border));
+        border-radius: calc(var(--radius) - 2px);
+        color: hsl(var(--foreground));
+        font-family: inherit;
+        font-size: 13px;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .class-search:focus { border-color: #555; }
-    .class-search::placeholder { color: #555; }
+    .class-search:hover { border-color: hsl(var(--ring)); }
+    .class-search:focus {
+        border-color: hsl(var(--ring));
+        box-shadow: 0 0 0 3px hsla(var(--ring) / 0.2);
+    }
+    .class-search::placeholder { color: hsl(var(--muted-foreground)); }
     .cat-tabs {
         display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px;
         -webkit-overflow-scrolling: touch; margin-bottom: 10px;
@@ -861,8 +1099,9 @@
                         </filter>
                     </defs>
 
-                    <!-- Black background disc -->
-                    <circle cx="100" cy="100" r="95" fill="#050505"/>
+                    <!-- Black background disc — flips bright red when a
+                         person enters any danger zone. -->
+                    <circle id="cab-bg-disc" cx="100" cy="100" r="95" fill="#050505"/>
 
                     <!-- Single neutral outer ring — represents 20 m radius. -->
                     <circle cx="100" cy="100" r="95" fill="none" stroke="#3a3a3a" stroke-width="1.5"/>
@@ -1007,29 +1246,34 @@
 
         <div class="tab-panel" data-panel="cameras">
         <div class="settings-section">
-            <h2>Cameras</h2>
-            <p>
-                Magnetically mount each camera and aim it. When the FOV looks
-                right, hit <b>Calibrate</b> to lock in the orientation. The
-                system then watches the camera's IMU for bumps — if it shifts
-                more than the threshold, the zone is flagged unsafe and the
-                operator is alerted in red.
-            </p>
-            <div id="cameras-list" style="display:flex; flex-direction:column; gap:10px;">
-                <div style="font-size:13px; color: hsl(var(--muted-foreground));">Loading cameras…</div>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <h2 style="margin:0;">Cameras</h2>
+                <div id="cameras-scan-meta" style="font-size:11px; color: hsl(var(--muted-foreground)); display:flex; align-items:center; gap:6px;">
+                <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:#22c55e; animation: gf-pulse 2s ease-in-out infinite;"></span>
+                Watching for new cameras
             </div>
-            <div class="gf-field" style="margin-top:16px;">
-                <label class="gf-label" for="set-ir-mode">IR Mode</label>
-                <select class="gf-select" id="set-ir-mode" style="max-width:200px;">
-                    <option value="auto">Auto</option>
-                    <option value="on">Always On</option>
-                    <option value="off">Off</option>
-                </select>
+            </div>
+            <p>
+                Plug an OAK-D Pro W PoE camera into the machine network and
+                it will appear below. Each camera has its own IR mode and
+                detection zones — use <b>Sync</b> in the zone editor when
+                you want one outline shared across the whole machine.
+            </p>
+
+            <!-- Newly-detected cameras (not yet installed) -->
+            <div id="cameras-detected-wrap" style="display:none; margin-top:14px;">
+                <div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color: hsl(var(--muted-foreground)); margin-bottom:8px;">Just plugged in</div>
+                <div id="cameras-detected" style="display:flex; flex-direction:column; gap:8px;"></div>
+            </div>
+
+            <!-- Installed cameras card grid -->
+            <div id="cameras-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:14px; margin-top:14px;">
+                <div style="font-size:13px; color: hsl(var(--muted-foreground));">Loading cameras…</div>
             </div>
         </div>
         <div class="settings-section">
             <h2>Detection Zones</h2>
-            <p>Proximity thresholds used by the zone classifier to flag warning / danger states. Distances are in metres regardless of the display units preference.</p>
+            <p>Proximity thresholds used by the zone classifier. Open the visual editor to draw the danger and warning shapes around the machine — by default all cameras share one outline, but you can unsync any camera to give it its own.</p>
             <div class="gf-row">
                 <div class="gf-field">
                     <label class="gf-label" for="set-zone-danger" style="color: hsl(var(--destructive));">Danger (m)</label>
@@ -1044,6 +1288,7 @@
                     <input class="gf-input" id="set-zone-max" type="number" step="1" min="1" />
                 </div>
             </div>
+            <button class="btn-primary" onclick="openZoneEditor()" style="margin-top:14px;">Open visual zone editor</button>
         </div>
         </div><!-- /cameras -->
 
@@ -1149,6 +1394,125 @@
         </div>
     </div>
 </div>
+<!-- ── Visual Zone Editor (Phase C) ────────────────────────────
+     Top-down 2D canvas for drawing the danger / warning shapes
+     around the machine. Coordinates are in metres with the
+     machine origin at (0,0). The editor stays decoupled from the
+     main 3D scene — much easier UX, less code, no perspective
+     headaches. The 3D view will read the saved shapes via
+     /api/zones and render them as ground-plane meshes. -->
+<div class="zone-editor-overlay" id="zone-editor-overlay">
+    <div class="ze-card">
+        <div class="ze-header">
+            <div class="ze-title">
+                <h1>Detection zones</h1>
+                <span class="ze-subtitle" id="ze-mode-label">Synced — one outline shared by all cameras</span>
+            </div>
+            <div class="ze-header-right">
+                <button class="ze-icon-btn" id="ze-sync-btn" onclick="zeToggleSync()" title="Sync all cameras">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                        <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                    </svg>
+                    <span id="ze-sync-label">Synced</span>
+                </button>
+                <select class="gf-select ze-cam-select" id="ze-cam-select" onchange="zeSelectCamera(this.value)" style="display:none;"></select>
+                <button class="btn-secondary" onclick="zeClose()">Cancel</button>
+                <button class="btn-primary" onclick="zeSave()">Save zones</button>
+            </div>
+        </div>
+
+        <div class="ze-body">
+            <!-- Left tool sidebar -->
+            <aside class="ze-side ze-side-left">
+                <div class="ze-side-section">
+                    <div class="ze-side-label">Zone</div>
+                    <div class="ze-zone-pills">
+                        <button class="ze-zone-pill ze-zone-danger active" data-zone="danger" onclick="zeSelectZone('danger')">Danger</button>
+                        <button class="ze-zone-pill ze-zone-warning" data-zone="warning" onclick="zeSelectZone('warning')">Warning</button>
+                    </div>
+                </div>
+                <div class="ze-side-section">
+                    <div class="ze-side-label">Tool</div>
+                    <div class="ze-tool-row">
+                        <button class="ze-tool active" data-tool="select" onclick="zeSelectTool('select')" title="Select / move (V)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 2l14 9-7 2-2 7z"/></svg>
+                        </button>
+                        <button class="ze-tool" data-tool="rect" onclick="zeSelectTool('rect')" title="Rectangle (R)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="1"/></svg>
+                        </button>
+                        <button class="ze-tool" data-tool="circle" onclick="zeSelectTool('circle')" title="Circle (C)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>
+                        </button>
+                        <button class="ze-tool" data-tool="oval" onclick="zeSelectTool('oval')" title="Oval (O)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="12" rx="10" ry="6"/></svg>
+                        </button>
+                        <button class="ze-tool" data-tool="polygon" onclick="zeSelectTool('polygon')" title="Polygon (P)">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l9 7-3 10H6L3 10z"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="ze-side-section">
+                    <button class="btn-secondary ze-side-btn" onclick="zeDeleteSelected()">Delete shape</button>
+                    <button class="btn-secondary ze-side-btn" onclick="zeClearZone()">Clear zone</button>
+                </div>
+                <div class="ze-side-section ze-side-help">
+                    <div class="ze-side-label">Tips</div>
+                    <ul>
+                        <li><b>Rect / circle / oval:</b> click-drag to draw</li>
+                        <li><b>Polygon:</b> click points, double-click to close</li>
+                        <li><b>Select:</b> drag to move, drag handles to resize</li>
+                        <li><b>Cameras:</b> drag the green dot to move, drag the smaller dot at its tip to rotate</li>
+                        <li><b>Esc</b> cancels the in-progress shape</li>
+                    </ul>
+                </div>
+            </aside>
+
+            <!-- Canvas -->
+            <div class="ze-canvas-wrap">
+                <canvas id="ze-canvas"></canvas>
+                <div class="ze-readout" id="ze-readout">—</div>
+                <div class="ze-legend">
+                    <span class="ze-legend-item"><span class="ze-legend-swatch" style="background:hsl(160 70% 45% / 0.25); border-color:hsl(160 70% 45%);"></span>Camera coverage</span>
+                    <span class="ze-legend-item"><span class="ze-legend-swatch" style="background:hsl(0 0% 50% / 0.18); border-style:dashed;"></span>No coverage</span>
+                </div>
+            </div>
+
+            <!-- Right preview sidebar -->
+            <aside class="ze-side ze-side-right">
+                <div class="ze-side-section" id="ze-cam-inspector" style="display:none;">
+                    <div class="ze-side-label">Selected camera</div>
+                    <div class="ze-cam-inspector-name" id="ze-insp-name">—</div>
+                    <div class="ze-insp-grid">
+                        <label class="gf-label">X (m)</label>
+                        <input class="gf-input" id="ze-insp-x" type="number" step="0.1" oninput="zeInspectorChange()" />
+                        <label class="gf-label">Y / height (m)</label>
+                        <input class="gf-input" id="ze-insp-y" type="number" step="0.1" min="0" oninput="zeInspectorChange()" />
+                        <label class="gf-label">Z (m)</label>
+                        <input class="gf-input" id="ze-insp-z" type="number" step="0.1" oninput="zeInspectorChange()" />
+                        <label class="gf-label">Yaw (°)</label>
+                        <input class="gf-input" id="ze-insp-yaw" type="number" step="1" oninput="zeInspectorChange()" />
+                    </div>
+                </div>
+                <div class="ze-side-section">
+                    <div class="ze-side-label">Camera preview</div>
+                    <select class="gf-select" id="ze-preview-cam" onchange="zeSetPreviewCam(this.value)"></select>
+                    <div class="ze-preview-frame">
+                        <img id="ze-preview-img" alt="Camera preview" />
+                        <div class="ze-preview-empty" id="ze-preview-empty">Camera offline</div>
+                    </div>
+                </div>
+                <div class="ze-side-section">
+                    <div class="ze-side-label">Coverage check</div>
+                    <div class="ze-coverage-status" id="ze-coverage-status">
+                        Draw a shape to check whether it falls inside camera coverage.
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+</div>
+
 <div class="gf-save-toast" id="gf-save-toast">Saved</div>
 
 <script src="/static/three.min.js"></script>
@@ -1159,13 +1523,28 @@ var activeModelId = '';
 var pendingModelId = '';
 var DETECTION_CLASSES = [];
 
+// Per-class enable map for the active model. Lives on the server under
+// config.class_filters[model_id] so toggles survive reloads and sync
+// across devices (operator tablet + dev browser, etc).
 var activeDetections = {};
-try {
-    var saved = localStorage.getItem('gf_detections');
-    if (saved) activeDetections = JSON.parse(saved);
-} catch(e) {}
+var _classFilterTimer = null;
 
-function saveDetections() { localStorage.setItem('gf_detections', JSON.stringify(activeDetections)); }
+function saveDetections() {
+    // Debounced POST. Compute the disabled list from activeDetections and
+    // send only the entry for the current model.
+    if (_classFilterTimer) clearTimeout(_classFilterTimer);
+    _classFilterTimer = setTimeout(function() {
+        if (!activeModelId) return;
+        var disabled = Object.keys(activeDetections).filter(function(k) {
+            return activeDetections[k] === false;
+        });
+        fetch('/api/detection/class_filters', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_id: activeModelId, disabled: disabled }),
+        }).catch(function() {});
+    }, 300);
+}
 
 // Category + priority for known classes
 var CLASS_META = {
@@ -1217,13 +1596,21 @@ function buildClassesFromModel(model) {
 }
 
 function loadModels() {
-    fetch('/api/models').then(function(r) { return r.json(); }).then(function(data) {
+    return Promise.all([
+        fetch('/api/models').then(function(r) { return r.json(); }),
+        fetch('/api/detection/class_filters').then(function(r) { return r.json(); }).catch(function() { return {}; }),
+    ]).then(function(results) {
+        var data = results[0];
+        var filters = results[1] || {};
         availableModels = data.models || [];
         activeModelId = data.active_model || '';
         var activeModel = availableModels.find(function(m) { return m.id === activeModelId; });
         DETECTION_CLASSES = buildClassesFromModel(activeModel);
+        // Reset to a fresh enable map for this model, then apply server filter.
+        activeDetections = {};
+        var disabled = filters[activeModelId] || [];
         DETECTION_CLASSES.forEach(function(c) {
-            if (activeDetections[c.id] === undefined) activeDetections[c.id] = true;
+            activeDetections[c.id] = disabled.indexOf(c.id) === -1;
         });
     }).catch(function() {});
 }
@@ -1279,11 +1666,13 @@ function confirmModelSwitch() {
     document.getElementById('model-confirm-modal').classList.remove('visible');
     if (!model) return;
     pendingModelId = model.id;
-    // Update local classes immediately so UI reflects the new model's vocabulary
+    // Update local classes immediately so UI reflects the new model's vocabulary.
+    // We optimistically default to all-enabled; loadModels() below will overwrite
+    // with the server-side filter for this model once the switch is committed.
+    activeModelId = model.id;
     DETECTION_CLASSES = buildClassesFromModel(model);
-    DETECTION_CLASSES.forEach(function(c) {
-        if (activeDetections[c.id] === undefined) activeDetections[c.id] = true;
-    });
+    activeDetections = {};
+    DETECTION_CLASSES.forEach(function(c) { activeDetections[c.id] = true; });
     renderModelList();
     renderDetectionGrid();
     // Flip the overlay into restarting state immediately so there's no gap
@@ -1301,6 +1690,8 @@ function confirmModelSwitch() {
         if (data.status !== 'restarting' && data.status !== 'ok') {
             console.error('Model switch response unexpected:', data);
         }
+        // Pull the persisted class filter for the new model.
+        loadModels().then(renderDetectionGrid);
     }).catch(function(err) {
         console.error('Model switch failed:', err);
     });
@@ -1404,7 +1795,7 @@ function toggleSettings() {
     if (o.classList.contains('open')) {
         renderModelList();
         renderDetectionGrid();
-        loadCameras();
+        startCameraPolling();
         loadSettingsFields();
     } else {
         stopCameraPolling();
@@ -1685,12 +2076,21 @@ function resetSettings() {
     });
 }
 
-// ── Cameras panel (magnetic mount + calibrate) ─────────────
+// ── Cameras panel (auto-discovery + per-camera IR) ──────────
+// Driven by /api/cameras/scan which returns:
+//   installed: [{id, label, device_id, online, ir_mode, ...}]
+//   detected:  [{mx_id, name, ...}]   ← OAK-Ds visible on the LAN
+//                                       but not yet installed in config
+//   scan_meta: { last_scan_at, scan_interval_s }
+//
+// The scanner thread on the server polls every 5 s, so a 5 s UI refresh
+// here gives us "instant" plug-and-play feel without a websocket.
+
 var _camerasPollTimer = null;
 
 function _calStateColor(state) {
     switch (state) {
-        case 'nominal': return '#737373';
+        case 'nominal': return '#22c55e';
         case 'warn':    return '#f59e0b';
         case 'bumped':
         case 'imu_lost': return '#ef4444';
@@ -1700,93 +2100,1456 @@ function _calStateColor(state) {
 
 function _calStateLabel(state) {
     switch (state) {
-        case 'nominal': return 'OK';
-        case 'warn': return 'DRIFT';
-        case 'bumped': return 'BUMPED';
-        case 'imu_lost': return 'IMU LOST';
-        case 'uncalibrated': return 'Not calibrated';
-        default: return state || 'Unknown';
+        case 'nominal': return 'Calibrated';
+        case 'warn': return 'Drift';
+        case 'bumped': return 'Bumped';
+        case 'imu_lost': return 'IMU lost';
+        default: return '';
     }
+}
+
+function _esc(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function stopCameraPolling() {
     if (_camerasPollTimer) { clearInterval(_camerasPollTimer); _camerasPollTimer = null; }
 }
 
+function startCameraPolling() {
+    stopCameraPolling();
+    loadCameras();
+    _camerasPollTimer = setInterval(loadCameras, 5000);
+}
+
 function loadCameras() {
-    fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
-        var cams = cfg.installed_cameras || [];
-        var container = document.getElementById('cameras-list');
-        if (!container) return;
-        if (!cams.length) {
-            container.innerHTML =
-                '<div style="font-size:13px; color: hsl(var(--muted-foreground));">' +
-                'No cameras installed. Connect an OAK-D Pro W PoE camera to the ' +
-                'machine network and it will appear here.' +
-                '</div>';
-            return;
-        }
-        container.innerHTML = cams.map(function(cam) {
-            var id = cam.id;
-            return (
-                '<div id="cam-row-' + id + '" ' +
-                     'style="padding:16px; background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: var(--radius); display:flex; flex-direction:column; gap:10px;">' +
-                    '<div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">' +
-                        '<div style="min-width:0;">' +
-                            '<div style="font-size:14px; font-weight:600; color: hsl(var(--foreground)); display:flex; align-items:center; gap:8px; letter-spacing:-0.01em;">' +
-                                '<span id="cam-dot-' + id + '" style="display:inline-block; width:8px; height:8px; border-radius:50%; background: hsl(var(--muted-foreground));"></span>' +
-                                (cam.label || id) +
-                            '</div>' +
-                            '<div style="font-size:12px; color: hsl(var(--muted-foreground)); margin-top:4px; font-variant-numeric: tabular-nums;">' +
-                                (cam.device_id || 'no device') +
-                                ' · pos [' + (cam.position_m || [0,0,0]).join(', ') + ']' +
-                                ' · yaw ' + (cam.yaw_deg || 0) + '°' +
-                                ' · HFOV ' + (cam.hfov_deg || 127) + '°' +
-                            '</div>' +
-                        '</div>' +
-                        '<button class="btn-primary" id="cam-cal-btn-' + id + '" ' +
-                                'onclick="startCalibrate(\'' + id + '\')">Calibrate</button>' +
-                    '</div>' +
-                    '<div id="cam-status-' + id + '" style="font-size:12px; color: hsl(var(--muted-foreground));">—</div>' +
-                '</div>'
-            );
-        }).join('');
-        stopCameraPolling();
-        _camerasPollTimer = setInterval(pollCameraStatuses, 500);
-        pollCameraStatuses();
+    fetch('/api/cameras/scan').then(function(r) { return r.json(); }).then(function(data) {
+        renderInstalledCameras(data.installed || []);
+        renderDetectedCameras(data.detected || []);
+        // Pull live calibration state for any online installed cameras.
+        (data.installed || []).forEach(function(cam) {
+            if (cam.online) refreshCameraStatus(cam.id);
+        });
+    }).catch(function() {});
+}
+
+function renderInstalledCameras(cams) {
+    var grid = document.getElementById('cameras-grid');
+    if (!grid) return;
+    if (!cams.length) {
+        grid.innerHTML =
+            '<div style="grid-column:1/-1; padding:24px; border:1px dashed hsl(var(--border)); border-radius: var(--radius); text-align:center; font-size:13px; color: hsl(var(--muted-foreground));">' +
+            'No cameras installed yet. Plug an OAK-D Pro W PoE camera into the machine network — it will show up here within a few seconds.' +
+            '</div>';
+        return;
+    }
+    grid.innerHTML = cams.map(_camCardHtml).join('');
+}
+
+function _camCardHtml(cam) {
+    var id = _esc(cam.id);
+    var online = !!cam.online;
+    var dotColor = online ? '#22c55e' : '#6b7280';
+    var dotTitle = online ? 'Online' : 'Offline';
+    var irMode = cam.ir_mode || 'auto';
+    var pos = cam.position_m || [0, 0, 0];
+    return (
+        '<div class="cam-card" data-cam-id="' + id + '" ' +
+            'style="padding:16px; background: hsl(var(--background)); border:1px solid hsl(var(--border)); border-radius: var(--radius); display:flex; flex-direction:column; gap:12px;">' +
+            // Header: dot + editable label + remove button
+            '<div style="display:flex; align-items:center; gap:10px;">' +
+                '<span title="' + dotTitle + '" style="flex-shrink:0; width:10px; height:10px; border-radius:50%; background:' + dotColor + '; box-shadow:0 0 0 2px hsl(var(--background)), 0 0 0 3px ' + dotColor + '33;"></span>' +
+                '<input type="text" value="' + _esc(cam.label || cam.id) + '" ' +
+                       'onchange="renameCamera(\'' + id + '\', this.value)" ' +
+                       'style="flex:1; min-width:0; background:transparent; border:none; border-bottom:1px solid transparent; padding:2px 0; font-size:15px; font-weight:600; color: hsl(var(--foreground)); outline:none; letter-spacing:-0.01em;" ' +
+                       'onfocus="this.style.borderBottomColor=\'hsl(var(--ring))\'" ' +
+                       'onblur="this.style.borderBottomColor=\'transparent\'" />' +
+                '<button title="Remove camera" onclick="removeCamera(\'' + id + '\')" ' +
+                        'style="flex-shrink:0; background:transparent; border:none; color: hsl(var(--muted-foreground)); cursor:pointer; padding:4px 6px; border-radius:6px; font-size:16px; line-height:1;" ' +
+                        'onmouseover="this.style.background=\'hsl(var(--destructive)/0.1)\'; this.style.color=\'hsl(var(--destructive))\'" ' +
+                        'onmouseout="this.style.background=\'transparent\'; this.style.color=\'hsl(var(--muted-foreground))\'">×</button>' +
+            '</div>' +
+
+            // Device meta
+            '<div style="font-size:11px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; display:flex; gap:10px; flex-wrap:wrap;">' +
+                '<span>' + _esc(cam.device_id || 'no device') + '</span>' +
+                '<span>·</span>' +
+                '<span>HFOV ' + (cam.hfov_deg || 127) + '°</span>' +
+                '<span>·</span>' +
+                '<span>pos [' + pos.map(function(n){return Number(n).toFixed(1);}).join(', ') + ']</span>' +
+            '</div>' +
+
+            // Live calibration line (only populated when online + has data)
+            '<div id="cam-status-' + id + '" style="font-size:12px; color: hsl(var(--muted-foreground)); min-height:16px;"></div>' +
+
+            // IR mode (per-camera) — uses the same gf-field/gf-select look
+            // as every other settings dropdown so it sits in the design system.
+            '<div class="gf-field" style="margin:0;">' +
+                '<label class="gf-label">IR mode</label>' +
+                '<select class="gf-select" onchange="setCameraIrMode(\'' + id + '\', this.value)">' +
+                    '<option value="auto"' + (irMode === 'auto' ? ' selected' : '') + '>Auto</option>' +
+                    '<option value="on"'   + (irMode === 'on'   ? ' selected' : '') + '>Always on</option>' +
+                    '<option value="off"'  + (irMode === 'off'  ? ' selected' : '') + '>Off</option>' +
+                '</select>' +
+            '</div>' +
+
+            // Actions row — calibrate only. Detection zones live in the
+            // unified visual editor below the camera grid (one place, no
+            // duplication with the per-camera button that used to live here).
+            '<button class="btn-primary" id="cam-cal-btn-' + id + '" ' +
+                    'onclick="startCalibrate(\'' + id + '\')" ' +
+                    (online ? '' : 'disabled title="Camera offline" ') +
+                    'style="padding:9px 12px; font-size:13px;' + (online ? '' : ' opacity:0.5; cursor:not-allowed;') + '">Calibrate</button>' +
+        '</div>'
+    );
+}
+
+function renderDetectedCameras(detected) {
+    var wrap = document.getElementById('cameras-detected-wrap');
+    var list = document.getElementById('cameras-detected');
+    if (!wrap || !list) return;
+    if (!detected.length) { wrap.style.display = 'none'; return; }
+    wrap.style.display = 'block';
+    list.innerHTML = detected.map(function(d) {
+        var did = _esc(d.mx_id || d.name || '');
+        var label = _esc(d.name || d.mx_id || 'Unknown OAK-D');
+        return (
+            '<div style="display:flex; align-items:center; gap:12px; padding:12px 14px; background: hsl(var(--background)); border:1px solid hsl(var(--ring)); border-radius: var(--radius);">' +
+                '<span style="width:8px; height:8px; border-radius:50%; background:#22c55e; flex-shrink:0;"></span>' +
+                '<div style="flex:1; min-width:0;">' +
+                    '<div style="font-size:13px; font-weight:600; color: hsl(var(--foreground));">' + label + '</div>' +
+                    '<div style="font-size:11px; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums;">mx_id ' + _esc(d.mx_id || '?') + (d.protocol ? ' · ' + _esc(d.protocol) : '') + '</div>' +
+                '</div>' +
+                '<button class="btn-primary" onclick="installCamera(\'' + did + '\')" style="padding:7px 14px; font-size:13px;">Install</button>' +
+            '</div>'
+        );
+    }).join('');
+}
+
+function refreshCameraStatus(camId) {
+    fetch('/api/cameras/' + encodeURIComponent(camId) + '/calibration_status')
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(s) {
+            if (!s) return;
+            var statusEl = document.getElementById('cam-status-' + camId);
+            if (!statusEl) return;
+            // Only show meaningful states. "uncalibrated" is the empty
+            // baseline — no need to surface it.
+            if (!s.state || s.state === 'uncalibrated') {
+                statusEl.innerHTML = '';
+                return;
+            }
+            var color = _calStateColor(s.state);
+            var label = _calStateLabel(s.state);
+            var bits = ['<span style="color:' + color + '; font-weight:600;">● ' + label + '</span>'];
+            if (s.current_delta_deg != null) {
+                bits.push('drift ' + Number(s.current_delta_deg).toFixed(1) + '°');
+            }
+            statusEl.innerHTML = bits.join(' &nbsp;·&nbsp; ');
+        }).catch(function() {});
+}
+
+// ── Per-camera mutations ─────────────────────────────────────
+
+function _patchCamera(camId, body) {
+    return fetch('/api/cameras/' + encodeURIComponent(camId), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
     });
 }
 
-function pollCameraStatuses() {
-    fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
-        var cams = cfg.installed_cameras || [];
-        cams.forEach(function(cam) {
-            fetch('/api/cameras/' + cam.id + '/calibration_status')
-                .then(function(r) { return r.ok ? r.json() : null; })
-                .then(function(s) {
-                    if (!s) return;
-                    var dot = document.getElementById('cam-dot-' + cam.id);
-                    var statusEl = document.getElementById('cam-status-' + cam.id);
-                    if (dot) dot.style.background = _calStateColor(s.state);
-                    if (!statusEl) return;
-                    var lines = [];
-                    lines.push('State: <b style="color:' + _calStateColor(s.state) + '">' + _calStateLabel(s.state) + '</b>');
-                    if (s.calibrated_at) {
-                        var when = new Date(s.calibrated_at).toLocaleString();
-                        lines.push('Calibrated ' + when);
-                    }
-                    if (s.current_delta_deg !== null && s.current_delta_deg !== undefined) {
-                        lines.push('Drift ' + Number(s.current_delta_deg).toFixed(2) + '° / threshold ' + s.bump_threshold_deg + '°');
-                    }
-                    if (!s.imu_present) {
-                        lines.push('<span style="color:#ef4444">No IMU data</span>');
-                    } else if (s.stability && !s.stability.stable && s.stability.reason) {
-                        lines.push('<span style="color:#999">' + s.stability.reason + '</span>');
-                    }
-                    statusEl.innerHTML = lines.join(' &nbsp;·&nbsp; ');
-                }).catch(function() {});
-        });
+function renameCamera(camId, label) {
+    if (!label || !label.trim()) return;
+    _patchCamera(camId, { label: label.trim() });
+}
+
+function setCameraIrMode(camId, mode) {
+    // Persist on the camera record so the driver picks it up next boot…
+    _patchCamera(camId, { ir_mode: mode });
+    // …and apply immediately to the live driver if anything is connected.
+    var body;
+    if (mode === 'on')       body = { auto: false, flood: 1.0, dot: 1.0 };
+    else if (mode === 'off') body = { auto: false, flood: 0.0, dot: 0.0 };
+    else                     body = { auto: true,  flood: 0.0, dot: 0.0 };
+    fetch('/api/ir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
     }).catch(function() {});
+}
+
+function removeCamera(camId) {
+    if (!confirm('Remove this camera from the machine? Detection zones for this camera will be lost.')) return;
+    fetch('/api/cameras/' + encodeURIComponent(camId), { method: 'DELETE' })
+        .then(function() { loadCameras(); });
+}
+
+function installCamera(deviceId) {
+    fetch('/api/cameras', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device_id: deviceId }),
+    }).then(function(r) { return r.json(); }).then(function() {
+        loadCameras();
+    });
+}
+
+// ── Visual Zone Editor (Phase C) ────────────────────────────
+// Top-down 2D canvas editor. The world coordinate system is metres
+// with the machine origin at (0, 0): +X is right (machine right side),
+// +Z is forward (machine front). The canvas does its own ortho
+// projection from world → pixel via a single scale factor (ze.pxPerM)
+// and a centred origin.
+//
+// State model:
+//   ze.shapes[zoneKey][camKey] = [shape, shape, ...]
+//   shape = { type, points: [[x,z],...], id }
+//
+// "Sync" mode keeps a single canonical key ('all'); per-camera mode
+// uses cam.id as the key. Toggling sync copies the synced shapes into
+// each camera's slot the first time it's unsynced (so you don't lose
+// your work when you flip the toggle).
+
+var ze = {
+    open: false,
+    sync: true,
+    cameras: [],            // [{id, label}, ...] for the per-camera dropdown
+    activeCamera: 'all',    // 'all' when synced, otherwise a cam.id
+    activeZone: 'danger',
+    activeTool: 'select',
+    shapes: { danger: { all: [], by_camera: {} }, warning: { all: [], by_camera: {} } },
+    selectedId: null,
+    drag: null,             // { kind: 'create'|'move'|'resize'|'polygon', ... }
+    machine: { width: 2.5, length: 8.4 },  // metres; updated from /api/machines
+    pxPerM: 30,             // canvas scale (auto-fit on open)
+    centerX: 0, centerY: 0, // canvas pixel coords of world origin
+    canvas: null, ctx: null,
+    nextId: 1,
+    pointer: null,          // { wx, wz } for HUD readout
+    sectors: [],            // [{id, position_m:[x,y,z], yaw_deg, hfov_deg, range_m, calibrated}, ...]
+    previewCam: '',         // cam.id currently showing in the preview pane
+    previewTimer: null,
+    selectedCamId: null,    // cam.id currently selected in the inspector
+    inspectorPatchTimer: null,
+};
+
+function _zeNextId() { return 'shp-' + (ze.nextId++); }
+
+function openZoneEditor(camId) {
+    var overlay = document.getElementById('zone-editor-overlay');
+    if (!overlay) return;
+    overlay.classList.add('open');
+    ze.open = true;
+    ze.canvas = document.getElementById('ze-canvas');
+    ze.ctx = ze.canvas.getContext('2d');
+    ze.selectedId = null;
+    ze.drag = null;
+    // Force a fresh camera-pose fetch every time the editor opens, so a
+    // PATCH from a previous session can't leave us drawing stale dots.
+    ze._camData = null;
+
+    // Load machine geometry, camera list, saved zones, and coverage sectors in parallel.
+    var machineType = (document.getElementById('set-machine-type') || {}).value || 'wheel_loader';
+    Promise.all([
+        fetch('/api/machines/' + machineType).then(function(r){ return r.ok ? r.json() : null; }),
+        fetch('/api/cameras/scan').then(function(r){ return r.json(); }),
+        fetch('/api/zones').then(function(r){ return r.json(); }),
+        fetch('/api/coverage').then(function(r){ return r.ok ? r.json() : { sectors: [] }; }),
+    ]).then(function(results) {
+        var machine = results[0], scan = results[1], zones = results[2], cov = results[3];
+        ze.sectors = (cov && cov.sectors) || [];
+        if (machine && machine.dimensions) {
+            ze.machine.width  = machine.dimensions.width_m  || 2.5;
+            ze.machine.length = machine.dimensions.length_m || 8.4;
+        }
+        ze.cameras = (scan.installed || []).map(function(c) {
+            return { id: c.id, label: c.label || c.id };
+        });
+        // Hydrate shapes from saved config — merge format. The server
+        // stores: { sync, all: {danger, warning}, by_camera: {camId: {danger, warning}} }
+        ze.sync = (zones.sync !== false);
+        ze.shapes = { danger: { all: [], by_camera: {} }, warning: { all: [], by_camera: {} } };
+        ['danger', 'warning'].forEach(function(z) {
+            var allArr = (zones.all && zones.all[z]) || [];
+            ze.shapes[z].all = allArr.map(_zeHydrate);
+            var bc = zones.by_camera || {};
+            Object.keys(bc).forEach(function(camId) {
+                ze.shapes[z].by_camera[camId] = ((bc[camId] && bc[camId][z]) || []).map(_zeHydrate);
+            });
+        });
+        // Pre-seed empty per-camera slots so the dropdown always has them.
+        ze.cameras.forEach(function(c) {
+            ['danger','warning'].forEach(function(z) {
+                if (!ze.shapes[z].by_camera[c.id]) ze.shapes[z].by_camera[c.id] = [];
+            });
+        });
+        ze.activeCamera = ze.sync ? 'all' : (ze.cameras[0] && ze.cameras[0].id) || 'all';
+
+        _zePopulateCameraSelect();
+        _zePopulatePreviewCamSelect();
+        _zeUpdateSyncUI();
+        _zeFitView();
+        _zeBindEvents();
+        _zeStartPreview();
+        _zeUpdateCoverageStatus();
+        _zeDraw();
+    }).catch(function(e) {
+        console.error('Zone editor load failed', e);
+    });
+}
+
+function _zeHydrate(s) {
+    return { id: s.id || _zeNextId(), type: s.type, points: (s.points || []).map(function(p){ return p.slice(); }) };
+}
+
+function zeClose() {
+    var overlay = document.getElementById('zone-editor-overlay');
+    if (overlay) overlay.classList.remove('open');
+    ze.open = false;
+    _zeStopPreview();
+    _zeUnbindEvents();
+}
+
+// ── Coordinate transforms ──────────────────────────────────
+// Convention: machine front (+Z in world) points UP on the canvas. This
+// matches the cab display (front at top of disc) and the 3D scene
+// (camera positioned so +Z is away from the viewer = top of screen).
+// We negate z when mapping to canvas Y so a camera at world z=+4.2
+// (front of machine) renders near the top of the editor.
+function _zeWorldToPx(x, z) {
+    return [ze.centerX + x * ze.pxPerM, ze.centerY - z * ze.pxPerM];
+}
+function _zePxToWorld(px, py) {
+    return [(px - ze.centerX) / ze.pxPerM, -(py - ze.centerY) / ze.pxPerM];
+}
+
+function _zeFitView() {
+    var c = ze.canvas;
+    var rect = c.getBoundingClientRect();
+    c.width  = Math.floor(rect.width  * window.devicePixelRatio);
+    c.height = Math.floor(rect.height * window.devicePixelRatio);
+    ze.ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+    // Fit ~25 m radius around the machine.
+    var fitRadiusM = 18;
+    var minSide = Math.min(rect.width, rect.height);
+    ze.pxPerM = (minSide * 0.45) / fitRadiusM;
+    ze.centerX = rect.width / 2;
+    ze.centerY = rect.height / 2;
+}
+
+// ── Active list helpers ────────────────────────────────────
+function _zeActiveList(zone) {
+    zone = zone || ze.activeZone;
+    if (ze.sync) return ze.shapes[zone].all;
+    if (!ze.shapes[zone].by_camera[ze.activeCamera]) {
+        ze.shapes[zone].by_camera[ze.activeCamera] = [];
+    }
+    return ze.shapes[zone].by_camera[ze.activeCamera];
+}
+
+function _zeForEachVisible(cb) {
+    // Iterate every shape that should be visible right now, with its
+    // zone key and a flag for whether it's the actively-edited list.
+    ['warning', 'danger'].forEach(function(zone) {
+        var active = _zeActiveList(zone);
+        active.forEach(function(s) { cb(s, zone, true); });
+    });
+}
+
+// ── Camera coverage helpers ────────────────────────────────
+// FOV is approximated as a flat ground-projected wedge from each camera's
+// (x, z) origin, sweeping start_deg → end_deg from the +Z (front) axis.
+// Yaw rotates the centre line; HFOV gives the half-angle.
+
+function _zePointInSector(wx, wz, sec) {
+    var px = sec.position_m[0], pz = sec.position_m[2];
+    var dx = wx - px, dz = wz - pz;
+    var dist = Math.hypot(dx, dz);
+    if (dist > (sec.range_m || 12)) return false;
+    // Bearing in degrees, where 0° = +Z (machine front), +90° = +X (right).
+    var bearing = Math.atan2(dx, dz) * 180 / Math.PI;
+    // start_deg/end_deg are ABSOLUTE bearings (already include yaw_deg).
+    var center = (sec.start_deg + sec.end_deg) / 2;
+    var half   = (sec.end_deg - sec.start_deg) / 2;
+    var rel = bearing - center;
+    while (rel > 180) rel -= 360;
+    while (rel < -180) rel += 360;
+    return Math.abs(rel) <= half;
+}
+
+function _zePointCovered(wx, wz) {
+    for (var i = 0; i < ze.sectors.length; i++) {
+        if (_zePointInSector(wx, wz, ze.sectors[i])) return true;
+    }
+    return false;
+}
+
+function _zeDrawCoverage(ctx) {
+    if (!ze.sectors.length) return;
+    // Each sector → a translucent green wedge on the ground plane.
+    ze.sectors.forEach(function(sec) {
+        var origin = _zeWorldToPx(sec.position_m[0], sec.position_m[2]);
+        var range = (sec.range_m || 12) * ze.pxPerM;
+        // Front-up canvas: +Z = up, +X = right.
+        // Bearings: 0°=+Z (face front/up), 90°=+X (face right), CW from +Z.
+        // Canvas angles: 0°=+X (right), 90°=+Y (down).
+        // → canvas = bearing - 90.  start_deg/end_deg are ABSOLUTE bearings
+        // (already include yaw_deg), per /api/coverage and the local rebuild.
+        var startCanvas = (sec.start_deg - 90) * Math.PI / 180;
+        var endCanvas   = (sec.end_deg   - 90) * Math.PI / 180;
+        ctx.fillStyle = 'hsla(160, 70%, 45%, 0.18)';
+        ctx.strokeStyle = 'hsla(160, 70%, 45%, 0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(origin[0], origin[1]);
+        ctx.arc(origin[0], origin[1], range, startCanvas, endCanvas);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    });
+}
+
+// ── Live preview polling ───────────────────────────────────
+function _zePopulatePreviewCamSelect() {
+    var sel = document.getElementById('ze-preview-cam');
+    if (!sel) return;
+    sel.innerHTML = '';
+    if (!ze.cameras.length) {
+        var opt = document.createElement('option');
+        opt.value = ''; opt.textContent = 'No cameras installed';
+        sel.appendChild(opt);
+        return;
+    }
+    ze.cameras.forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.label;
+        sel.appendChild(opt);
+    });
+    ze.previewCam = ze.cameras[0].id;
+    sel.value = ze.previewCam;
+}
+
+function zeSetPreviewCam(camId) {
+    ze.previewCam = camId;
+    _zePollPreview(); // refresh immediately
+}
+
+// ── Camera inspector ───────────────────────────────────────
+// The inspector exposes raw position (x, y, z) and yaw for the selected
+// camera. Height (y) isn't drawable on the top-down canvas, so a numeric
+// input is the cleanest way to expose it. Inputs PATCH the camera with
+// a short debounce so typing doesn't spam the server.
+function zeSelectCameraInInspector(camId) {
+    if (!ze._camData || !ze._camData[camId]) return;
+    ze.selectedCamId = camId;
+    var d = ze._camData[camId];
+    var wrap = document.getElementById('ze-cam-inspector');
+    if (wrap) wrap.style.display = 'flex';
+    var nameEl = document.getElementById('ze-insp-name');
+    if (nameEl) nameEl.textContent = d.label || camId;
+    var setVal = function(id, v) { var el = document.getElementById(id); if (el) el.value = Number(v).toFixed(2); };
+    setVal('ze-insp-x', d.position_m[0]);
+    setVal('ze-insp-y', d.position_m[1]);
+    setVal('ze-insp-z', d.position_m[2]);
+    setVal('ze-insp-yaw', d.yaw_deg);
+    // Convenience: route the preview to this camera too.
+    var sel = document.getElementById('ze-preview-cam');
+    if (sel && sel.value !== camId) {
+        sel.value = camId;
+        zeSetPreviewCam(camId);
+    }
+}
+
+function _zeRefreshInspectorFromState() {
+    // Called after a drag updates position/yaw on the canvas — keep the
+    // numeric inputs in sync without clobbering whatever the user is
+    // currently typing into them.
+    var camId = ze.selectedCamId;
+    if (!camId || !ze._camData || !ze._camData[camId]) return;
+    if (document.activeElement && document.activeElement.id &&
+        document.activeElement.id.indexOf('ze-insp-') === 0) return;
+    var d = ze._camData[camId];
+    var setVal = function(id, v) { var el = document.getElementById(id); if (el) el.value = Number(v).toFixed(2); };
+    setVal('ze-insp-x', d.position_m[0]);
+    setVal('ze-insp-y', d.position_m[1]);
+    setVal('ze-insp-z', d.position_m[2]);
+    setVal('ze-insp-yaw', d.yaw_deg);
+}
+
+function zeInspectorChange() {
+    var camId = ze.selectedCamId;
+    if (!camId || !ze._camData || !ze._camData[camId]) return;
+    var x = parseFloat((document.getElementById('ze-insp-x') || {}).value);
+    var y = parseFloat((document.getElementById('ze-insp-y') || {}).value);
+    var z = parseFloat((document.getElementById('ze-insp-z') || {}).value);
+    var yaw = parseFloat((document.getElementById('ze-insp-yaw') || {}).value);
+    var d = ze._camData[camId];
+    if (!isNaN(x))   d.position_m[0] = x;
+    if (!isNaN(y))   d.position_m[1] = y;
+    if (!isNaN(z))   d.position_m[2] = z;
+    if (!isNaN(yaw)) d.yaw_deg = yaw;
+    _zeRebuildSectorsFromCamData();
+    _zeUpdateCoverageStatus();
+    _zeDraw();
+    // Debounced PATCH.
+    if (ze.inspectorPatchTimer) clearTimeout(ze.inspectorPatchTimer);
+    ze.inspectorPatchTimer = setTimeout(function() {
+        fetch('/api/cameras/' + encodeURIComponent(camId), {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                position_m: d.position_m,
+                yaw_deg: d.yaw_deg,
+            }),
+        }).then(function() {
+            showSaveToast('Camera saved');
+            if (window.reloadCoverage) window.reloadCoverage();
+        }).catch(function(){});
+    }, 400);
+}
+
+function _zeStartPreview() {
+    _zeStopPreview();
+    if (!ze.cameras.length) return;
+    _zePollPreview();
+    ze.previewTimer = setInterval(_zePollPreview, 200); // ~5 fps is plenty
+}
+
+function _zeStopPreview() {
+    if (ze.previewTimer) { clearInterval(ze.previewTimer); ze.previewTimer = null; }
+    var img = document.getElementById('ze-preview-img');
+    if (img) img.removeAttribute('src');
+    var frame = document.querySelector('.ze-preview-frame');
+    if (frame) frame.classList.remove('has-image');
+}
+
+function _zePollPreview() {
+    if (!ze.previewCam) return;
+    var img = document.getElementById('ze-preview-img');
+    var frame = document.querySelector('.ze-preview-frame');
+    if (!img) return;
+    var url = '/api/camera/snapshot?cam_id=' + encodeURIComponent(ze.previewCam) + '&t=' + Date.now();
+    var probe = new Image();
+    probe.onload = function() {
+        img.src = url;
+        if (frame) frame.classList.add('has-image');
+    };
+    probe.onerror = function() {
+        img.removeAttribute('src');
+        if (frame) frame.classList.remove('has-image');
+    };
+    probe.src = url;
+}
+
+// ── Per-shape coverage check ───────────────────────────────
+function _zeShapeCoverageRatio(shape) {
+    // Sample N points across the shape's bbox and ask "how many fall
+    // inside both the shape AND any camera FOV?". Cheap stochastic
+    // sampling — good enough for an at-a-glance "X% covered" badge.
+    var bb = _zeShapeBBox(shape);
+    if (!bb) return 1;
+    var SAMPLES = 200;
+    var inside = 0, covered = 0;
+    for (var i = 0; i < SAMPLES; i++) {
+        var x = bb.x1 + Math.random() * (bb.x2 - bb.x1);
+        var z = bb.z1 + Math.random() * (bb.z2 - bb.z1);
+        if (!_zeHitTestShape(shape, x, z)) continue;
+        inside++;
+        if (_zePointCovered(x, z)) covered++;
+    }
+    if (inside === 0) return 1;
+    return covered / inside;
+}
+
+function _zeShapeBBox(s) {
+    if (s.type === 'rect') {
+        return {
+            x1: Math.min(s.points[0][0], s.points[1][0]),
+            x2: Math.max(s.points[0][0], s.points[1][0]),
+            z1: Math.min(s.points[0][1], s.points[1][1]),
+            z2: Math.max(s.points[0][1], s.points[1][1]),
+        };
+    }
+    if (s.type === 'circle') {
+        var r = Math.hypot(s.points[1][0] - s.points[0][0], s.points[1][1] - s.points[0][1]);
+        return { x1: s.points[0][0] - r, x2: s.points[0][0] + r, z1: s.points[0][1] - r, z2: s.points[0][1] + r };
+    }
+    if (s.type === 'oval') {
+        var rx = Math.abs(s.points[1][0] - s.points[0][0]);
+        var rz = Math.abs(s.points[1][1] - s.points[0][1]);
+        return { x1: s.points[0][0] - rx, x2: s.points[0][0] + rx, z1: s.points[0][1] - rz, z2: s.points[0][1] + rz };
+    }
+    if (s.type === 'polygon') {
+        if (!s.points.length) return null;
+        var x1 = s.points[0][0], x2 = x1, z1 = s.points[0][1], z2 = z1;
+        s.points.forEach(function(p) {
+            if (p[0] < x1) x1 = p[0]; if (p[0] > x2) x2 = p[0];
+            if (p[1] < z1) z1 = p[1]; if (p[1] > z2) z2 = p[1];
+        });
+        return { x1: x1, x2: x2, z1: z1, z2: z2 };
+    }
+    return null;
+}
+
+function _zeUpdateCoverageStatus() {
+    var el = document.getElementById('ze-coverage-status');
+    if (!el) return;
+    var lists = [_zeActiveList('danger'), _zeActiveList('warning')];
+    var allShapes = lists[0].concat(lists[1]);
+    if (!allShapes.length) {
+        el.className = 'ze-coverage-status';
+        el.textContent = 'Draw a shape to check whether it falls inside camera coverage.';
+        return;
+    }
+    if (!ze.sectors.length) {
+        el.className = 'ze-coverage-status warn';
+        el.innerHTML = '<b>No camera coverage data.</b> Calibrate at least one camera so the editor can check zone coverage.';
+        return;
+    }
+    var worst = 1;
+    allShapes.forEach(function(s) {
+        var r = _zeShapeCoverageRatio(s);
+        if (r < worst) worst = r;
+    });
+    var pct = Math.round(worst * 100);
+    if (worst >= 0.95) {
+        el.className = 'ze-coverage-status good';
+        el.innerHTML = '<b>Fully covered.</b> Every zone shape sits inside a camera FOV.';
+    } else if (worst >= 0.6) {
+        el.className = 'ze-coverage-status warn';
+        el.innerHTML = '<b>' + pct + '% covered.</b> Part of a zone falls outside camera coverage — detections in those areas will be missed.';
+    } else {
+        el.className = 'ze-coverage-status bad';
+        el.innerHTML = '<b>Only ' + pct + '% covered.</b> Most of a zone is in a blind spot. Add a camera or reshape the zone.';
+    }
+}
+
+// ── Drawing ────────────────────────────────────────────────
+function _zeDraw() {
+    if (!ze.ctx) return;
+    var ctx = ze.ctx;
+    var rect = ze.canvas.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    _zeDrawAxes(ctx, rect);
+    _zeDrawCoverage(ctx);
+    _zeDrawMachine(ctx);
+    _zeDrawCameras(ctx);
+
+    // Warning under danger so danger always reads on top.
+    var warningList = _zeActiveList('warning');
+    var dangerList  = _zeActiveList('danger');
+    warningList.forEach(function(s) { _zeDrawShape(ctx, s, 'warning'); });
+    dangerList.forEach(function(s)  { _zeDrawShape(ctx, s, 'danger'); });
+
+    // Drag preview.
+    if (ze.drag && ze.drag.kind === 'create' && ze.drag.preview) {
+        _zeDrawShape(ctx, ze.drag.preview, ze.activeZone, true);
+    }
+    if (ze.drag && ze.drag.kind === 'polygon') {
+        _zeDrawPolygonPreview(ctx, ze.drag);
+    }
+
+    // Selection handles.
+    if (ze.selectedId) {
+        var sel = _zeFindSelected();
+        if (sel) _zeDrawHandles(ctx, sel.shape);
+    }
+}
+
+function _zeDrawAxes(ctx, rect) {
+    // Subtle crosshair through the world origin.
+    ctx.strokeStyle = 'rgba(120,120,120,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, ze.centerY);   ctx.lineTo(rect.width, ze.centerY);
+    ctx.moveTo(ze.centerX, 0);   ctx.lineTo(ze.centerX, rect.height);
+    ctx.stroke();
+    // Range rings every 5 m.
+    ctx.strokeStyle = 'rgba(120,120,120,0.18)';
+    ctx.setLineDash([4, 4]);
+    [5, 10, 15, 20].forEach(function(r) {
+        ctx.beginPath();
+        ctx.arc(ze.centerX, ze.centerY, r * ze.pxPerM, 0, Math.PI * 2);
+        ctx.stroke();
+        // Label
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(120,120,120,0.7)';
+        ctx.font = '10px system-ui';
+        ctx.fillText(r + ' m', ze.centerX + r * ze.pxPerM + 4, ze.centerY - 2);
+        ctx.setLineDash([4, 4]);
+    });
+    ctx.setLineDash([]);
+}
+
+function _zeDrawMachine(ctx) {
+    var w = ze.machine.width, l = ze.machine.length;
+    // After the front-up flip, +Z in world → -Y on canvas. So the world
+    // corner (+w/2, +l/2) is at the top-right of the canvas, and
+    // (-w/2, -l/2) is at the bottom-left. Use min/max to get a normalised
+    // (top-left, width, height) rect for fillRect.
+    var pa = _zeWorldToPx(-w / 2, -l / 2);
+    var pb = _zeWorldToPx( w / 2,  l / 2);
+    var x  = Math.min(pa[0], pb[0]);
+    var yT = Math.min(pa[1], pb[1]); // top edge of chassis (machine front)
+    var yB = Math.max(pa[1], pb[1]); // bottom edge of chassis (machine rear)
+    var wpx = Math.abs(pb[0] - pa[0]);
+    var hpx = yB - yT;
+    // Body
+    ctx.fillStyle = 'rgba(80, 90, 110, 0.55)';
+    ctx.strokeStyle = 'hsl(220 13% 40%)';
+    ctx.lineWidth = 2;
+    ctx.fillRect(x, yT, wpx, hpx);
+    ctx.strokeRect(x, yT, wpx, hpx);
+    // MACHINE label centred in the chassis.
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = '11px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('MACHINE', ze.centerX, ze.centerY + 4);
+    // FRONT marker — chevron + text just ABOVE the front edge of the
+    // chassis. Top of the canvas = +Z = machine front.
+    var frontY = yT - 14;
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(ze.centerX,     frontY + 4);
+    ctx.lineTo(ze.centerX - 5, frontY + 9);
+    ctx.lineTo(ze.centerX + 5, frontY + 9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.font = '9px system-ui';
+    ctx.fillText('FRONT', ze.centerX, frontY - 2);
+    ctx.textAlign = 'start';
+}
+
+function _zeDrawCameras(ctx) {
+    if (!ze.cameras.length) return;
+    // We cache a richer per-camera record (position + yaw + IDs) in
+    // ze._camData so the user can drag cameras around and rotate them
+    // directly on the canvas. Source of truth is /api/config.
+    if (!ze._camData) {
+        ze._camData = {};
+        fetch('/api/config').then(function(r){return r.json();}).then(function(cfg) {
+            (cfg.installed_cameras || []).forEach(function(c) {
+                ze._camData[c.id] = {
+                    position_m: (c.position_m || [0, 2.5, 0]).slice(),
+                    yaw_deg: c.yaw_deg || 0,
+                    label: c.label || c.id,
+                };
+            });
+            // Re-derive the FOV wedges from the just-loaded camera poses
+            // so the green sectors always agree with the camera dots —
+            // even if /api/coverage returned a stale snapshot earlier in
+            // openZoneEditor.
+            _zeRebuildSectorsFromCamData();
+            _zeDraw();
+        }).catch(function(){});
+        return;
+    }
+    Object.keys(ze._camData).forEach(function(cid) {
+        var d = ze._camData[cid];
+        var px = _zeWorldToPx(d.position_m[0], d.position_m[2]);
+        // Yaw indicator: a short line pointing in the camera's facing
+        // direction (yaw_deg = bearing from +Z, machine front).
+        var yawRad = (d.yaw_deg - 90) * Math.PI / 180; // canvas-space angle
+        var armPx = 20;
+        var ax = px[0] + Math.cos(yawRad) * armPx;
+        var ay = px[1] + Math.sin(yawRad) * armPx;
+        ctx.strokeStyle = 'hsl(160 70% 55%)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(px[0], px[1]);
+        ctx.lineTo(ax, ay);
+        ctx.stroke();
+        // Yaw handle (drag this to rotate)
+        ctx.fillStyle = 'hsl(160 70% 70%)';
+        ctx.beginPath();
+        ctx.arc(ax, ay, 4, 0, Math.PI * 2);
+        ctx.fill();
+        // Camera body dot (drag this to move)
+        ctx.fillStyle = (ze._camDragId === cid) ? 'hsl(160 90% 65%)' : 'hsl(160 70% 45%)';
+        ctx.strokeStyle = 'hsl(0 0% 100%)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(px[0], px[1], 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // Label
+        ctx.fillStyle = 'hsl(160 70% 30%)';
+        ctx.font = '600 11px system-ui';
+        ctx.fillText(d.label, px[0] + 10, px[1] - 8);
+    });
+}
+
+// Convert ze._camData → ze.sectors so the FOV wedge re-renders live
+// while you drag a camera around. We intentionally re-derive every
+// frame instead of mutating the existing sector objects so the math
+// stays in one place.
+function _zeRebuildSectorsFromCamData() {
+    if (!ze._camData) return;
+    var byId = {};
+    ze.sectors.forEach(function(s) { byId[s.id] = s; });
+    ze.sectors = Object.keys(ze._camData).map(function(cid) {
+        var d = ze._camData[cid];
+        var existing = byId[cid] || {
+            id: cid, label: d.label,
+            hfov_deg: 127, range_m: 12,
+            calibrated: true,
+        };
+        var hfov = existing.hfov_deg || 127;
+        var yaw = d.yaw_deg || 0;
+        // Absolute bearings: yaw ± hfov/2, matching what /api/coverage returns.
+        return Object.assign({}, existing, {
+            position_m: d.position_m.slice(),
+            yaw_deg: yaw,
+            start_deg: yaw - hfov / 2,
+            end_deg:   yaw + hfov / 2,
+        });
+    });
+}
+
+function _zeZoneStyle(zone, ghost) {
+    var alpha = ghost ? 0.25 : 0.5;
+    if (zone === 'danger') {
+        return { fill: 'hsla(0, 84%, 60%, ' + alpha + ')', stroke: 'hsl(0 84% 50%)' };
+    }
+    return { fill: 'hsla(38, 92%, 50%, ' + alpha + ')', stroke: 'hsl(38 92% 45%)' };
+}
+
+function _zeDrawShape(ctx, shape, zone, ghost) {
+    var st = _zeZoneStyle(zone, ghost);
+    ctx.fillStyle = st.fill;
+    ctx.strokeStyle = st.stroke;
+    ctx.lineWidth = 2;
+    if (shape.type === 'rect') {
+        var p1 = _zeWorldToPx(shape.points[0][0], shape.points[0][1]);
+        var p2 = _zeWorldToPx(shape.points[1][0], shape.points[1][1]);
+        var x = Math.min(p1[0], p2[0]), y = Math.min(p1[1], p2[1]);
+        var w = Math.abs(p2[0] - p1[0]), h = Math.abs(p2[1] - p1[1]);
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+    } else if (shape.type === 'circle') {
+        var c = _zeWorldToPx(shape.points[0][0], shape.points[0][1]);
+        var rWorld = Math.hypot(shape.points[1][0] - shape.points[0][0],
+                                shape.points[1][1] - shape.points[0][1]);
+        var rPx = rWorld * ze.pxPerM;
+        ctx.beginPath();
+        ctx.arc(c[0], c[1], rPx, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    } else if (shape.type === 'oval') {
+        var c2 = _zeWorldToPx(shape.points[0][0], shape.points[0][1]);
+        var rxPx = Math.abs(shape.points[1][0] - shape.points[0][0]) * ze.pxPerM;
+        var ryPx = Math.abs(shape.points[1][1] - shape.points[0][1]) * ze.pxPerM;
+        ctx.beginPath();
+        ctx.ellipse(c2[0], c2[1], rxPx, ryPx, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    } else if (shape.type === 'polygon') {
+        if (shape.points.length < 2) return;
+        ctx.beginPath();
+        shape.points.forEach(function(p, i) {
+            var px = _zeWorldToPx(p[0], p[1]);
+            if (i === 0) ctx.moveTo(px[0], px[1]);
+            else ctx.lineTo(px[0], px[1]);
+        });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+    }
+}
+
+function _zeDrawPolygonPreview(ctx, drag) {
+    var st = _zeZoneStyle(ze.activeZone, true);
+    ctx.strokeStyle = st.stroke;
+    ctx.fillStyle = st.fill;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    drag.points.forEach(function(p, i) {
+        var px = _zeWorldToPx(p[0], p[1]);
+        if (i === 0) ctx.moveTo(px[0], px[1]);
+        else ctx.lineTo(px[0], px[1]);
+    });
+    if (drag.cursor) {
+        var cp = _zeWorldToPx(drag.cursor[0], drag.cursor[1]);
+        ctx.lineTo(cp[0], cp[1]);
+    }
+    ctx.stroke();
+    // Vertex dots
+    drag.points.forEach(function(p) {
+        var px = _zeWorldToPx(p[0], p[1]);
+        ctx.fillStyle = st.stroke;
+        ctx.beginPath();
+        ctx.arc(px[0], px[1], 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+function _zeDrawHandles(ctx, shape) {
+    var handles = _zeShapeHandles(shape);
+    ctx.fillStyle = 'hsl(0 0% 100%)';
+    ctx.strokeStyle = 'hsl(220 90% 55%)';
+    ctx.lineWidth = 2;
+    handles.forEach(function(h) {
+        var px = _zeWorldToPx(h.wx, h.wz);
+        ctx.beginPath();
+        ctx.rect(px[0] - 5, px[1] - 5, 10, 10);
+        ctx.fill();
+        ctx.stroke();
+    });
+}
+
+function _zeShapeHandles(shape) {
+    // Returns [{key, wx, wz}, ...] for shape-type-specific resize handles.
+    if (shape.type === 'rect') {
+        var x1 = shape.points[0][0], z1 = shape.points[0][1];
+        var x2 = shape.points[1][0], z2 = shape.points[1][1];
+        return [
+            { key: 'p0', wx: x1, wz: z1 },
+            { key: 'p1', wx: x2, wz: z1 },
+            { key: 'p2', wx: x2, wz: z2 },
+            { key: 'p3', wx: x1, wz: z2 },
+        ];
+    }
+    if (shape.type === 'circle') {
+        var cx = shape.points[0][0], cz = shape.points[0][1];
+        var r = Math.hypot(shape.points[1][0] - cx, shape.points[1][1] - cz);
+        return [
+            { key: 'r+x', wx: cx + r, wz: cz },
+            { key: 'r-x', wx: cx - r, wz: cz },
+            { key: 'r+z', wx: cx, wz: cz + r },
+            { key: 'r-z', wx: cx, wz: cz - r },
+        ];
+    }
+    if (shape.type === 'oval') {
+        var ox = shape.points[0][0], oz = shape.points[0][1];
+        var rx = Math.abs(shape.points[1][0] - ox);
+        var rz = Math.abs(shape.points[1][1] - oz);
+        return [
+            { key: 'rx+', wx: ox + rx, wz: oz },
+            { key: 'rx-', wx: ox - rx, wz: oz },
+            { key: 'rz+', wx: ox, wz: oz + rz },
+            { key: 'rz-', wx: ox, wz: oz - rz },
+        ];
+    }
+    if (shape.type === 'polygon') {
+        return shape.points.map(function(p, i) {
+            return { key: 'v' + i, wx: p[0], wz: p[1] };
+        });
+    }
+    return [];
+}
+
+// ── Hit testing ────────────────────────────────────────────
+function _zeHitTestHandle(shape, wx, wz) {
+    var tolPx = 8;
+    var tolM = tolPx / ze.pxPerM;
+    var hs = _zeShapeHandles(shape);
+    for (var i = 0; i < hs.length; i++) {
+        if (Math.abs(hs[i].wx - wx) <= tolM && Math.abs(hs[i].wz - wz) <= tolM) {
+            return hs[i];
+        }
+    }
+    return null;
+}
+
+function _zeHitTestShape(shape, wx, wz) {
+    if (shape.type === 'rect') {
+        var x1 = Math.min(shape.points[0][0], shape.points[1][0]);
+        var x2 = Math.max(shape.points[0][0], shape.points[1][0]);
+        var z1 = Math.min(shape.points[0][1], shape.points[1][1]);
+        var z2 = Math.max(shape.points[0][1], shape.points[1][1]);
+        return wx >= x1 && wx <= x2 && wz >= z1 && wz <= z2;
+    }
+    if (shape.type === 'circle') {
+        var r = Math.hypot(shape.points[1][0] - shape.points[0][0],
+                           shape.points[1][1] - shape.points[0][1]);
+        return Math.hypot(wx - shape.points[0][0], wz - shape.points[0][1]) <= r;
+    }
+    if (shape.type === 'oval') {
+        var rx = Math.abs(shape.points[1][0] - shape.points[0][0]);
+        var rz = Math.abs(shape.points[1][1] - shape.points[0][1]);
+        if (rx === 0 || rz === 0) return false;
+        var dx = (wx - shape.points[0][0]) / rx;
+        var dz = (wz - shape.points[0][1]) / rz;
+        return (dx * dx + dz * dz) <= 1;
+    }
+    if (shape.type === 'polygon') {
+        return _zePointInPolygon([wx, wz], shape.points);
+    }
+    return false;
+}
+
+function _zePointInPolygon(pt, poly) {
+    var x = pt[0], y = pt[1], inside = false;
+    for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        var xi = poly[i][0], yi = poly[i][1];
+        var xj = poly[j][0], yj = poly[j][1];
+        var intersect = ((yi > y) !== (yj > y)) &&
+                        (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+function _zeHitTestCameras(wx, wz) {
+    // Returns {id, kind: 'body'|'yaw'} or null. Yaw handles win on overlap.
+    if (!ze._camData) return null;
+    var bodyTolM = 9 / ze.pxPerM;
+    var yawTolM  = 6 / ze.pxPerM;
+    var ids = Object.keys(ze._camData);
+    // Yaw pass first (top of draw order).
+    for (var i = 0; i < ids.length; i++) {
+        var d = ze._camData[ids[i]];
+        var yawRad = (d.yaw_deg - 90) * Math.PI / 180;
+        var armM = 20 / ze.pxPerM;
+        var yx = d.position_m[0] + Math.cos(yawRad) * armM;
+        var yz = d.position_m[2] + Math.sin(yawRad) * armM;
+        if (Math.hypot(wx - yx, wz - yz) <= yawTolM) {
+            return { id: ids[i], kind: 'yaw' };
+        }
+    }
+    // Then body.
+    for (var j = 0; j < ids.length; j++) {
+        var d2 = ze._camData[ids[j]];
+        if (Math.hypot(wx - d2.position_m[0], wz - d2.position_m[2]) <= bodyTolM) {
+            return { id: ids[j], kind: 'body' };
+        }
+    }
+    return null;
+}
+
+function _zeFindSelected() {
+    if (!ze.selectedId) return null;
+    var zones = ['danger', 'warning'];
+    for (var i = 0; i < zones.length; i++) {
+        var list = _zeActiveList(zones[i]);
+        for (var j = 0; j < list.length; j++) {
+            if (list[j].id === ze.selectedId) {
+                return { shape: list[j], list: list, zone: zones[i] };
+            }
+        }
+    }
+    return null;
+}
+
+// ── Pointer events ─────────────────────────────────────────
+function _zeBindEvents() {
+    if (!ze.canvas || ze._bound) return;
+    ze._bound = true;
+    ze.canvas.addEventListener('pointerdown', _zeOnDown);
+    ze.canvas.addEventListener('pointermove', _zeOnMove);
+    ze.canvas.addEventListener('pointerup',   _zeOnUp);
+    ze.canvas.addEventListener('dblclick',    _zeOnDblClick);
+    window.addEventListener('keydown', _zeOnKey);
+    window.addEventListener('resize', _zeOnResize);
+}
+function _zeUnbindEvents() {
+    if (!ze.canvas || !ze._bound) return;
+    ze._bound = false;
+    ze.canvas.removeEventListener('pointerdown', _zeOnDown);
+    ze.canvas.removeEventListener('pointermove', _zeOnMove);
+    ze.canvas.removeEventListener('pointerup',   _zeOnUp);
+    ze.canvas.removeEventListener('dblclick',    _zeOnDblClick);
+    window.removeEventListener('keydown', _zeOnKey);
+    window.removeEventListener('resize', _zeOnResize);
+}
+function _zeOnResize() { _zeFitView(); _zeDraw(); }
+
+function _zeEventToWorld(e) {
+    var rect = ze.canvas.getBoundingClientRect();
+    return _zePxToWorld(e.clientX - rect.left, e.clientY - rect.top);
+}
+
+function _zeOnDown(e) {
+    e.preventDefault();
+    ze.canvas.setPointerCapture(e.pointerId);
+    var w = _zeEventToWorld(e);
+    var wx = w[0], wz = w[1];
+
+    if (ze.activeTool === 'select') {
+        // 1. Camera yaw handles take priority (they sit on top of everything).
+        var camHit = _zeHitTestCameras(wx, wz);
+        if (camHit) {
+            ze._camDragId = camHit.id;
+            ze.drag = camHit.kind === 'yaw'
+                ? { kind: 'cam-yaw',  camId: camHit.id }
+                : { kind: 'cam-move', camId: camHit.id };
+            ze.selectedId = null;
+            // Selecting a camera also opens the inspector and routes the
+            // preview pane to that camera (one less click).
+            zeSelectCameraInInspector(camHit.id);
+            _zeDraw();
+            return;
+        }
+        // 2. Shape handles on the currently-selected shape.
+        var sel = _zeFindSelected();
+        if (sel) {
+            var h = _zeHitTestHandle(sel.shape, wx, wz);
+            if (h) {
+                ze.drag = { kind: 'resize', shape: sel.shape, handle: h.key, startX: wx, startZ: wz };
+                return;
+            }
+        }
+        // 3. Any shape under cursor.
+        var found = null;
+        ['danger','warning'].forEach(function(z) {
+            if (found) return;
+            var list = _zeActiveList(z);
+            for (var i = list.length - 1; i >= 0; i--) {
+                if (_zeHitTestShape(list[i], wx, wz)) { found = { shape: list[i] }; break; }
+            }
+        });
+        if (found) {
+            ze.selectedId = found.shape.id;
+            ze.drag = {
+                kind: 'move', shape: found.shape,
+                startX: wx, startZ: wz,
+                origPoints: found.shape.points.map(function(p){ return p.slice(); }),
+            };
+        } else {
+            ze.selectedId = null;
+        }
+        _zeDraw();
+        return;
+    }
+
+    if (ze.activeTool === 'polygon') {
+        // Polygon is click-to-add-vertex; double-click to close.
+        if (!ze.drag || ze.drag.kind !== 'polygon') {
+            ze.drag = { kind: 'polygon', points: [[wx, wz]], cursor: [wx, wz] };
+        } else {
+            ze.drag.points.push([wx, wz]);
+        }
+        _zeDraw();
+        return;
+    }
+
+    // rect / circle / oval — click-drag create
+    if (ze.activeTool === 'rect' || ze.activeTool === 'circle' || ze.activeTool === 'oval') {
+        var preview = { id: _zeNextId(), type: ze.activeTool, points: [[wx, wz], [wx, wz]] };
+        ze.drag = { kind: 'create', preview: preview };
+        _zeDraw();
+    }
+}
+
+function _zeOnMove(e) {
+    var w = _zeEventToWorld(e);
+    var wx = w[0], wz = w[1];
+    ze.pointer = { wx: wx, wz: wz };
+    _zeUpdateReadout();
+
+    if (!ze.drag) { return; }
+
+    if (ze.drag.kind === 'create') {
+        ze.drag.preview.points[1] = [wx, wz];
+        _zeDraw();
+        return;
+    }
+    if (ze.drag.kind === 'move') {
+        var dx = wx - ze.drag.startX;
+        var dz = wz - ze.drag.startZ;
+        ze.drag.shape.points = ze.drag.origPoints.map(function(p) {
+            return [p[0] + dx, p[1] + dz];
+        });
+        _zeDraw();
+        return;
+    }
+    if (ze.drag.kind === 'resize') {
+        _zeApplyResize(ze.drag.shape, ze.drag.handle, wx, wz);
+        _zeDraw();
+        return;
+    }
+    if (ze.drag.kind === 'cam-move') {
+        var cd = ze._camData[ze.drag.camId];
+        if (cd) {
+            cd.position_m[0] = wx;
+            cd.position_m[2] = wz;
+            _zeRebuildSectorsFromCamData();
+            _zeRefreshInspectorFromState();
+            _zeDraw();
+        }
+        return;
+    }
+    if (ze.drag.kind === 'cam-yaw') {
+        var cd2 = ze._camData[ze.drag.camId];
+        if (cd2) {
+            // Yaw is the bearing from camera origin to cursor, in degrees,
+            // 0° = +Z (machine front), +CW.
+            var dx = wx - cd2.position_m[0];
+            var dz = wz - cd2.position_m[2];
+            cd2.yaw_deg = Math.atan2(dx, dz) * 180 / Math.PI;
+            _zeRebuildSectorsFromCamData();
+            _zeRefreshInspectorFromState();
+            _zeDraw();
+        }
+        return;
+    }
+    if (ze.drag.kind === 'polygon') {
+        ze.drag.cursor = [wx, wz];
+        _zeDraw();
+        return;
+    }
+}
+
+function _zeOnUp(e) {
+    if (!ze.drag) return;
+    if (ze.drag.kind === 'create') {
+        var p = ze.drag.preview;
+        // Reject zero-size shapes.
+        var dx = Math.abs(p.points[1][0] - p.points[0][0]);
+        var dz = Math.abs(p.points[1][1] - p.points[0][1]);
+        if (dx > 0.1 || dz > 0.1) {
+            _zeActiveList().push(p);
+            ze.selectedId = p.id;
+        }
+        ze.drag = null;
+        _zeUpdateCoverageStatus();
+        _zeDraw();
+        return;
+    }
+    if (ze.drag.kind === 'move' || ze.drag.kind === 'resize') {
+        ze.drag = null;
+        _zeUpdateCoverageStatus();
+        _zeDraw();
+        return;
+    }
+    if (ze.drag.kind === 'cam-move' || ze.drag.kind === 'cam-yaw') {
+        var camId = ze.drag.camId;
+        ze._camDragId = null;
+        ze.drag = null;
+        // Persist on the server. The pipeline reads camera position on
+        // (re)connect, so position changes take full effect on next boot;
+        // the FOV wedge in the editor already reflects the new value.
+        var d = ze._camData[camId];
+        if (d) {
+            fetch('/api/cameras/' + encodeURIComponent(camId), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    position_m: d.position_m,
+                    yaw_deg: d.yaw_deg,
+                }),
+            }).then(function() {
+                showSaveToast('Camera position saved');
+                // Refresh the spatial 3D view so its FOV cones reflect
+                // the new pose without waiting for a pipeline restart.
+                if (window.reloadCoverage) window.reloadCoverage();
+            }).catch(function(){});
+        }
+        _zeUpdateCoverageStatus();
+        _zeDraw();
+        return;
+    }
+    // Polygon drag persists across mouseups; only Esc / dblclick / Enter ends it.
+}
+
+function _zeOnDblClick(e) {
+    if (ze.drag && ze.drag.kind === 'polygon') {
+        if (ze.drag.points.length >= 3) {
+            var poly = { id: _zeNextId(), type: 'polygon', points: ze.drag.points.slice() };
+            _zeActiveList().push(poly);
+            ze.selectedId = poly.id;
+        }
+        ze.drag = null;
+        _zeUpdateCoverageStatus();
+        _zeDraw();
+    }
+}
+
+function _zeOnKey(e) {
+    if (!ze.open) return;
+    if (e.key === 'Escape') {
+        if (ze.drag) { ze.drag = null; _zeDraw(); }
+        else { zeClose(); }
+    } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        zeDeleteSelected();
+    } else if (e.key.toLowerCase() === 'v') { zeSelectTool('select'); }
+      else if (e.key.toLowerCase() === 'r') { zeSelectTool('rect'); }
+      else if (e.key.toLowerCase() === 'c') { zeSelectTool('circle'); }
+      else if (e.key.toLowerCase() === 'o') { zeSelectTool('oval'); }
+      else if (e.key.toLowerCase() === 'p') { zeSelectTool('polygon'); }
+}
+
+function _zeApplyResize(shape, handle, wx, wz) {
+    if (shape.type === 'rect') {
+        var p0 = shape.points[0], p1 = shape.points[1];
+        if (handle === 'p0') { p0[0] = wx; p0[1] = wz; }
+        else if (handle === 'p1') { p1[0] = wx; p0[1] = wz; }
+        else if (handle === 'p2') { p1[0] = wx; p1[1] = wz; }
+        else if (handle === 'p3') { p0[0] = wx; p1[1] = wz; }
+        return;
+    }
+    if (shape.type === 'circle') {
+        var cx = shape.points[0][0], cz = shape.points[0][1];
+        var r = Math.hypot(wx - cx, wz - cz);
+        // Always store the radius vector along +X for normalisation.
+        shape.points[1] = [cx + r, cz];
+        return;
+    }
+    if (shape.type === 'oval') {
+        var ox = shape.points[0][0], oz = shape.points[0][1];
+        var rx = Math.abs(shape.points[1][0] - ox);
+        var rz = Math.abs(shape.points[1][1] - oz);
+        if (handle === 'rx+' || handle === 'rx-') rx = Math.abs(wx - ox);
+        if (handle === 'rz+' || handle === 'rz-') rz = Math.abs(wz - oz);
+        shape.points[1] = [ox + rx, oz + rz];
+        return;
+    }
+    if (shape.type === 'polygon') {
+        var idx = parseInt(handle.slice(1), 10);
+        if (!isNaN(idx) && shape.points[idx]) {
+            shape.points[idx] = [wx, wz];
+        }
+        return;
+    }
+}
+
+function _zeUpdateReadout() {
+    var el = document.getElementById('ze-readout');
+    if (!el || !ze.pointer) return;
+    var d = Math.hypot(ze.pointer.wx, ze.pointer.wz);
+    // Distance from machine outline (approximate: subtract half-extents
+    // along whichever axis dominates). Negative = inside the machine.
+    var hw = ze.machine.width / 2, hl = ze.machine.length / 2;
+    var ox = Math.max(0, Math.abs(ze.pointer.wx) - hw);
+    var oz = Math.max(0, Math.abs(ze.pointer.wz) - hl);
+    var fromMachine = Math.hypot(ox, oz);
+    el.innerHTML =
+        '<b>x</b> ' + ze.pointer.wx.toFixed(1) + ' m &nbsp; ' +
+        '<b>z</b> ' + ze.pointer.wz.toFixed(1) + ' m &nbsp;·&nbsp; ' +
+        'from origin <b>' + d.toFixed(1) + ' m</b> &nbsp;·&nbsp; ' +
+        'from machine <b>' + fromMachine.toFixed(1) + ' m</b>';
+}
+
+// ── Toolbar actions ────────────────────────────────────────
+function zeSelectTool(t) {
+    ze.activeTool = t;
+    document.querySelectorAll('.ze-tool').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.tool === t);
+    });
+    if (t !== 'polygon' && ze.drag && ze.drag.kind === 'polygon') ze.drag = null;
+    _zeDraw();
+}
+function zeSelectZone(z) {
+    ze.activeZone = z;
+    ze.selectedId = null;
+    document.querySelectorAll('.ze-zone-pill').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.zone === z);
+    });
+    _zeDraw();
+}
+function zeToggleSync() {
+    ze.sync = !ze.sync;
+    if (!ze.sync) {
+        // First time unsyncing: copy 'all' shapes into every per-camera slot
+        // so the operator doesn't lose work. Only seed empty slots.
+        ze.cameras.forEach(function(c) {
+            ['danger', 'warning'].forEach(function(z) {
+                if (!ze.shapes[z].by_camera[c.id] || !ze.shapes[z].by_camera[c.id].length) {
+                    ze.shapes[z].by_camera[c.id] = ze.shapes[z].all.map(function(s) {
+                        return { id: _zeNextId(), type: s.type, points: s.points.map(function(p){return p.slice();}) };
+                    });
+                }
+            });
+        });
+        ze.activeCamera = (ze.cameras[0] && ze.cameras[0].id) || 'all';
+    } else {
+        ze.activeCamera = 'all';
+    }
+    ze.selectedId = null;
+    _zePopulateCameraSelect();
+    _zeUpdateSyncUI();
+    _zeDraw();
+}
+function _zeUpdateSyncUI() {
+    var btn = document.getElementById('ze-sync-btn');
+    var lbl = document.getElementById('ze-sync-label');
+    var modeLbl = document.getElementById('ze-mode-label');
+    var sel = document.getElementById('ze-cam-select');
+    if (btn) btn.classList.toggle('synced', ze.sync);
+    if (lbl) lbl.textContent = ze.sync ? 'Synced' : 'Per-camera';
+    if (modeLbl) modeLbl.textContent = ze.sync
+        ? 'Synced — one outline shared by all cameras'
+        : 'Per-camera — each camera has its own outline';
+    if (sel) sel.style.display = ze.sync ? 'none' : 'inline-block';
+}
+function _zePopulateCameraSelect() {
+    var sel = document.getElementById('ze-cam-select');
+    if (!sel) return;
+    sel.innerHTML = '';
+    ze.cameras.forEach(function(c) {
+        var opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.label;
+        if (c.id === ze.activeCamera) opt.selected = true;
+        sel.appendChild(opt);
+    });
+}
+function zeSelectCamera(camId) {
+    ze.activeCamera = camId;
+    ze.selectedId = null;
+    _zeDraw();
+}
+function zeDeleteSelected() {
+    if (!ze.selectedId) return;
+    var sel = _zeFindSelected();
+    if (!sel) return;
+    var idx = sel.list.indexOf(sel.shape);
+    if (idx >= 0) sel.list.splice(idx, 1);
+    ze.selectedId = null;
+    _zeUpdateCoverageStatus();
+    _zeDraw();
+}
+function zeClearZone() {
+    if (!confirm('Clear all ' + ze.activeZone + ' shapes for ' + (ze.sync ? 'all cameras' : ze.activeCamera) + '?')) return;
+    var list = _zeActiveList();
+    list.length = 0;
+    ze.selectedId = null;
+    _zeUpdateCoverageStatus();
+    _zeDraw();
+}
+
+function zeSave() {
+    // Serialize back into the storage shape the API expects.
+    var payload = {
+        sync: ze.sync,
+        all: {
+            danger:  ze.shapes.danger.all.map(_zeSerialize),
+            warning: ze.shapes.warning.all.map(_zeSerialize),
+        },
+        by_camera: {},
+    };
+    Object.keys(ze.shapes.danger.by_camera).concat(Object.keys(ze.shapes.warning.by_camera))
+        .forEach(function(camId) {
+            if (payload.by_camera[camId]) return;
+            payload.by_camera[camId] = {
+                danger:  (ze.shapes.danger.by_camera[camId]  || []).map(_zeSerialize),
+                warning: (ze.shapes.warning.by_camera[camId] || []).map(_zeSerialize),
+            };
+        });
+    fetch('/api/zones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(function(r) {
+        if (!r.ok) throw new Error('save failed');
+        return r.json();
+    }).then(function() {
+        showSaveToast('Zones saved');
+        if (window.reloadZones) window.reloadZones();
+        if (window.reloadCabDangerZones) window.reloadCabDangerZones();
+        zeClose();
+    }).catch(function() {
+        showSaveToast('Save failed');
+    });
+}
+
+function _zeSerialize(s) {
+    return { id: s.id, type: s.type, points: s.points.map(function(p){return p.slice();}) };
 }
 
 function startCalibrate(camId) {
@@ -1887,6 +3650,16 @@ function setUnits(u) {
     if (nearestEl && window._lastClosestM != null) {
         nearestEl.textContent = formatDist(window._lastClosestM);
     }
+    // Propagate to the server so registered cab displays (ESP32 AMOLEDs)
+    // pick up the change on their next broadcast tick. Fire-and-forget —
+    // a transient network error shouldn't revert the operator's toggle.
+    try {
+        fetch('/api/units', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({units: u})
+        }).catch(function() {});
+    } catch (e) {}
 }
 function updateUnitsToggle() {
     var nodes = document.querySelectorAll('.units-toggle');
@@ -1912,6 +3685,15 @@ function formatDist(m) {
     return Math.round(m) + 'm';
 }
 updateUnitsToggle();
+// Push the tablet's cached preference up on page load so any cab display
+// that registered earlier (before this browser opened) gets reconciled.
+try {
+    fetch('/api/units', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({units: distUnits})
+    }).catch(function() {});
+} catch (e) {}
 
 // ── Config ──────────────────────────────────────────────
 var DANGER = 3.5, WARNING = 6.0, MAX_RANGE = 12.0;
@@ -1937,6 +3719,92 @@ var CAB_DOT_TTL_MS = 1200;     // How long a dot persists after its last update
 
 // Persistent state per track_id
 var cabDots = {};              // tid -> { x, z, lastSeen, nodes:{glow,ring,core} }
+
+// Flat lists of zone shapes in machine-frame metres, refreshed by
+// reloadCabDangerZones(). updateCabDisplay() uses these to pulse the
+// background and recolour any dot inside a zone. Danger always wins
+// when a person is inside both (worst case rules the alert).
+var cabDangerShapes = [];
+var cabWarningShapes = [];
+
+function _cabPointInPolygon(x, z, pts) {
+    var inside = false;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+        var xi = pts[i][0], zi = pts[i][1];
+        var xj = pts[j][0], zj = pts[j][1];
+        var intersect = ((zi > z) !== (zj > z)) &&
+            (x < (xj - xi) * (z - zi) / ((zj - zi) || 1e-9) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+function _cabPointInShape(x, z, s) {
+    if (!s || !s.points || s.points.length < 1) return false;
+    if (s.type === 'rect') {
+        if (s.points.length < 2) return false;
+        var x1 = Math.min(s.points[0][0], s.points[1][0]);
+        var x2 = Math.max(s.points[0][0], s.points[1][0]);
+        var z1 = Math.min(s.points[0][1], s.points[1][1]);
+        var z2 = Math.max(s.points[0][1], s.points[1][1]);
+        return x >= x1 && x <= x2 && z >= z1 && z <= z2;
+    }
+    if (s.type === 'circle') {
+        if (s.points.length < 2) return false;
+        var cx = s.points[0][0], cz = s.points[0][1];
+        var r = Math.hypot(s.points[1][0] - cx, s.points[1][1] - cz);
+        return Math.hypot(x - cx, z - cz) <= r;
+    }
+    if (s.type === 'oval') {
+        if (s.points.length < 2) return false;
+        var ox = s.points[0][0], oz = s.points[0][1];
+        var rx = Math.abs(s.points[1][0] - ox);
+        var rz = Math.abs(s.points[1][1] - oz);
+        if (rx <= 0 || rz <= 0) return false;
+        var nx = (x - ox) / rx, nz = (z - oz) / rz;
+        return (nx * nx + nz * nz) <= 1;
+    }
+    if (s.type === 'polygon') {
+        if (s.points.length < 3) return false;
+        return _cabPointInPolygon(x, z, s.points);
+    }
+    return false;
+}
+
+function _cabPointInAny(x, z, shapes) {
+    for (var i = 0; i < shapes.length; i++) {
+        if (_cabPointInShape(x, z, shapes[i])) return true;
+    }
+    return false;
+}
+
+function reloadCabDangerZones() {
+    fetch('/api/zones').then(function(r) { return r.json(); }).then(function(z) {
+        var danger = [];
+        var warning = [];
+        if (z.sync !== false) {
+            ((z.all && z.all.danger)  || []).forEach(function(s) { danger.push(s); });
+            ((z.all && z.all.warning) || []).forEach(function(s) { warning.push(s); });
+        } else {
+            Object.keys(z.by_camera || {}).forEach(function(cid) {
+                var bc = z.by_camera[cid] || {};
+                (bc.danger  || []).forEach(function(s) { danger.push(s); });
+                (bc.warning || []).forEach(function(s) { warning.push(s); });
+            });
+        }
+        cabDangerShapes = danger;
+        cabWarningShapes = warning;
+    }).catch(function() {});
+}
+window.reloadCabDangerZones = reloadCabDangerZones;
+reloadCabDangerZones();
+
+// Cab dot colours per zone state. The bg-disc colour itself is driven
+// by CSS keyframes — JS only toggles the class so the pulse stays
+// silky-smooth even when SSE briefly hiccups.
+var CAB_DOT_DANGER = '#fecaca';
+var CAB_DOT_WARN   = '#fde68a';
+var CAB_DOT_SAFE   = '#7dd3fc';
 
 function _cabMakeNodes(grp) {
     var ns = 'http://www.w3.org/2000/svg';
@@ -1986,10 +3854,16 @@ function updateCabDisplay(detections) {
 
     // Mark which tracks we saw this tick so we can age the rest.
     var seenThisTick = {};
+    var anyInDanger = false;
+    var anyInWarning = false;
 
     detections.forEach(function(det) {
         var xm = det.x_m || 0;
         var zm = det.z_m || 0;
+        var inDanger  = _cabPointInAny(xm, zm, cabDangerShapes);
+        var inWarning = !inDanger && _cabPointInAny(xm, zm, cabWarningShapes);
+        if (inDanger)  anyInDanger = true;
+        if (inWarning) anyInWarning = true;
         var tid = det.track_id;
         if (tid == null) {
             // Synthetic key for un-tracked detections so they at least
@@ -2029,6 +3903,13 @@ function updateCabDisplay(detections) {
         // continuous, so we don't need a visual distinction here.
         var op = 1.0;
         if (d.nodes) {
+            // Recolour the dot per zone state. Light tints so the dot
+            // stays legible against the pulsing red/yellow background.
+            var dotFill = inDanger ? CAB_DOT_DANGER
+                        : inWarning ? CAB_DOT_WARN
+                        : CAB_DOT_SAFE;
+            d.nodes.glow.setAttribute('fill', dotFill);
+            d.nodes.ring.setAttribute('fill', dotFill);
             d.nodes.glow.setAttribute('cx', sx.toFixed(1));
             d.nodes.glow.setAttribute('cy', sy.toFixed(1));
             d.nodes.glow.setAttribute('opacity', (op * 0.30).toFixed(2));
@@ -2063,6 +3944,16 @@ function updateCabDisplay(detections) {
             _cabRemoveNodes(cabDots[tid]);
             delete cabDots[tid];
         }
+    }
+
+    // Pulse the whole disc red (danger) or yellow (warning) whenever
+    // anyone is inside one of those zones. Danger always wins. The CSS
+    // keyframes drive the actual fill animation — we only flip classes.
+    var bg = document.getElementById('cab-bg-disc');
+    if (bg) {
+        bg.classList.toggle('cab-bg-danger', anyInDanger);
+        bg.classList.toggle('cab-bg-warn',   !anyInDanger && anyInWarning);
+        // When neither class is set, the bg returns to its inline #050505.
     }
 }
 
@@ -2157,12 +4048,14 @@ function drawDebugBoxes() {
     scene.fog = new THREE.Fog(0xf2f2f2, 25, 50);
 
     // ── Camera — high-angle third-person (~55° pitch) ─────
-    // Higher elevation + closer in Z ensures both the front and rear of
-    // the machine remain visible, while preserving some perspective
-    // depth rather than going fully top-down.
+    // Higher elevation + view from BEHIND the machine (-Z) so the
+    // machine front (+Z) appears at the TOP of the screen, matching the
+    // editor canvas and the cab display. Without this flip, +Z would
+    // appear at the bottom of the screen and visually contradict the
+    // other two views.
     var camera = new THREE.PerspectiveCamera(55, 640 / 300, 0.1, 80);
-    camera.position.set(0, 14, 8);
-    camera.lookAt(0, 0, -2);
+    camera.position.set(0, 16, -13);
+    camera.lookAt(0, 0, -1);
 
     // ── Lighting ──────────────────────────────────────────
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
@@ -2196,6 +4089,12 @@ function drawDebugBoxes() {
     var fovGroup = new THREE.Group();
     scene.add(fovGroup);
 
+    // Detection zones drawn by the visual editor (Phase C). Sits between
+    // ground and FOV wedges so the wedges still read on top.
+    var zonesGroup = new THREE.Group();
+    zonesGroup.position.y = 0.025; // tiny lift to beat z-fighting with the ground
+    scene.add(zonesGroup);
+
     // Fetch machine profile and build 3D representation
     var machineConfig = { type: 'wheel_loader' };
     fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
@@ -2212,12 +4111,15 @@ function drawDebugBoxes() {
         chassis.position.y = 0.35; chassis.castShadow = true;
         machineGroup.add(chassis);
 
-        // Cab
+        // Cab — sits toward the REAR of the chassis (-Z) on a wheel
+        // loader. Front of the machine is +Z in our world frame, which
+        // matches both machine_profiles.py mount slots (front=[0, _, +4.2])
+        // and the top-down editor (FRONT label at canvas-bottom = +Z).
         var cab = new THREE.Mesh(
             new THREE.BoxGeometry(mW * 0.7, mH * 0.3, mL * 0.2),
             new THREE.MeshStandardMaterial({ color: 0x7a7a88, roughness: 0.55, metalness: 0.15 })
         );
-        cab.position.set(0, 0.6 + mH * 0.15, mL * 0.15);
+        cab.position.set(0, 0.6 + mH * 0.15, -mL * 0.15);
         cab.castShadow = true;
         machineGroup.add(cab);
 
@@ -2232,18 +4134,26 @@ function drawDebugBoxes() {
             machineGroup.add(w);
         });
 
-        // Forward arrow
+        // Forward arrow — sits OFF the front edge of the chassis at +Z.
+        // The shape extends along its local +Y so the tip lands further
+        // out from the chassis (tip at +0.6 in local Y → world +Z after
+        // the -π/2 X rotation flips local Y onto world -Z, so we put
+        // the base at +(mL/2 + 0.8) and let the tip retract toward the
+        // chassis to land at +(mL/2 + 0.2). Net: arrow visibly points
+        // out from the front of the machine.)
         var arrShape = new THREE.Shape();
         arrShape.moveTo(0, 0); arrShape.lineTo(-0.3, 0.6); arrShape.lineTo(0.3, 0.6);
         var arrMesh = new THREE.Mesh(
             new THREE.ShapeGeometry(arrShape),
             new THREE.MeshBasicMaterial({ color: 0x4BA3C7, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
         );
-        arrMesh.rotation.x = -Math.PI / 2;
-        arrMesh.position.set(0, 0.62, -(mL / 2 + 0.2));
+        // Rotate +π/2 around X so the shape's +Y maps to world +Z
+        // (front), flipping the original code that pointed at -Z.
+        arrMesh.rotation.x = Math.PI / 2;
+        arrMesh.position.set(0, 0.62, mL / 2 + 0.2);
         machineGroup.add(arrMesh);
 
-        // "FRONT" label
+        // "FRONT" label — same +Z side as the arrow.
         var lc = document.createElement('canvas'); lc.width = 128; lc.height = 32;
         var lctx = lc.getContext('2d');
         lctx.font = 'bold 16px -apple-system, system-ui, sans-serif';
@@ -2251,7 +4161,7 @@ function drawDebugBoxes() {
         lctx.fillText('FRONT', 64, 22);
         var lSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(lc), transparent: true }));
         lSprite.scale.set(2, 0.5, 1);
-        lSprite.position.set(0, 0.8, -(mL / 2 + 1.0));
+        lSprite.position.set(0, 0.8, mL / 2 + 1.0);
         machineGroup.add(lSprite);
 
         // ── Camera FOV cones — driven by /api/coverage ────
@@ -2368,7 +4278,12 @@ function drawDebugBoxes() {
                 };
                 _wedgesByCam[sector.id] = wedgeRefs;
 
-                // FOV edge lines (brighter than fill)
+                // FOV edge lines (brighter than fill). The cone fill is
+                // a Shape rotated -π/2 around X, which maps shape-Y onto
+                // world +Z — so a yaw=0 wedge fans toward +Z (front).
+                // The edges have to use the SAME forward sign (+cos),
+                // otherwise they'd shoot out the back of the machine
+                // even though the fill points forward.
                 var edgeMat = new THREE.LineBasicMaterial({
                     color: color, transparent: true, opacity: 0.55
                 });
@@ -2380,7 +4295,7 @@ function drawDebugBoxes() {
                     new THREE.Vector3(
                         pos[0] + Math.sin(leftAngle) * range,
                         0.05,
-                        pos[2] - Math.cos(leftAngle) * range
+                        pos[2] + Math.cos(leftAngle) * range
                     ),
                 ]);
                 fovGroup.add(new THREE.Line(edgeGeo, edgeMat));
@@ -2390,7 +4305,7 @@ function drawDebugBoxes() {
                     new THREE.Vector3(
                         pos[0] + Math.sin(rightAngle) * range,
                         0.05,
-                        pos[2] - Math.cos(rightAngle) * range
+                        pos[2] + Math.cos(rightAngle) * range
                     ),
                 ]);
                 fovGroup.add(new THREE.Line(edgeGeo2, edgeMat));
@@ -2527,6 +4442,95 @@ function drawDebugBoxes() {
     // Expose for future Settings UI to trigger a re-render after edits
     window.reloadCoverage = function() { renderCoverageSectors(MAX_COVERAGE_RADIUS); };
 
+    // ── Detection zone meshes (Phase C visual editor) ──────
+    // Reads /api/zones and builds flat ground-plane meshes for every
+    // shape. The editor stores world coords in (x, z) metres with the
+    // machine origin at (0, 0), which lines up directly with the 3D
+    // scene's X/Z axes — no transform needed beyond the y=0 lift.
+    var ZONE_COLOR = { danger: 0xe85a3c, warning: 0xf0a83c };
+
+    function _shapeToThreeShape(s) {
+        var sh = new THREE.Shape();
+        if (s.type === 'rect') {
+            var x1 = Math.min(s.points[0][0], s.points[1][0]);
+            var x2 = Math.max(s.points[0][0], s.points[1][0]);
+            var z1 = Math.min(s.points[0][1], s.points[1][1]);
+            var z2 = Math.max(s.points[0][1], s.points[1][1]);
+            sh.moveTo(x1, z1); sh.lineTo(x2, z1); sh.lineTo(x2, z2); sh.lineTo(x1, z2); sh.closePath();
+        } else if (s.type === 'circle') {
+            var cx = s.points[0][0], cz = s.points[0][1];
+            var r = Math.hypot(s.points[1][0] - cx, s.points[1][1] - cz);
+            if (r <= 0.01) return null;
+            sh.absellipse(cx, cz, r, r, 0, Math.PI * 2, false, 0);
+        } else if (s.type === 'oval') {
+            var ox = s.points[0][0], oz = s.points[0][1];
+            var rx = Math.abs(s.points[1][0] - ox);
+            var rz = Math.abs(s.points[1][1] - oz);
+            if (rx <= 0.01 || rz <= 0.01) return null;
+            sh.absellipse(ox, oz, rx, rz, 0, Math.PI * 2, false, 0);
+        } else if (s.type === 'polygon') {
+            if (!s.points || s.points.length < 3) return null;
+            sh.moveTo(s.points[0][0], s.points[0][1]);
+            for (var i = 1; i < s.points.length; i++) sh.lineTo(s.points[i][0], s.points[i][1]);
+            sh.closePath();
+        } else {
+            return null;
+        }
+        return sh;
+    }
+
+    function _addZoneMesh(shape, zoneKey) {
+        var threeShape = _shapeToThreeShape(shape);
+        if (!threeShape) return;
+        var geom = new THREE.ShapeGeometry(threeShape);
+        // ShapeGeometry sits in the XY plane; rotate to lay flat on XZ.
+        geom.rotateX(-Math.PI / 2);
+        var fillMat = new THREE.MeshBasicMaterial({
+            color: ZONE_COLOR[zoneKey], transparent: true, opacity: 0.32,
+            side: THREE.DoubleSide, depthWrite: false,
+        });
+        var mesh = new THREE.Mesh(geom, fillMat);
+        zonesGroup.add(mesh);
+        // Outline the shape with a flat ribbon (cheap and reliable —
+        // EdgesGeometry + LineSegments would also work but ribbons read
+        // better against the ground texture at low camera angles).
+        var edges = new THREE.EdgesGeometry(geom);
+        var lineMat = new THREE.LineBasicMaterial({ color: ZONE_COLOR[zoneKey] });
+        var line = new THREE.LineSegments(edges, lineMat);
+        zonesGroup.add(line);
+    }
+
+    function reloadZones() {
+        // Tear down existing meshes.
+        while (zonesGroup.children.length) {
+            var ch = zonesGroup.children.pop();
+            if (ch.geometry) ch.geometry.dispose();
+            if (ch.material) ch.material.dispose();
+        }
+        fetch('/api/zones').then(function(r) { return r.json(); }).then(function(z) {
+            // Sync mode: render the shared 'all' shapes once.
+            // Per-camera mode: render the union of every camera's shapes.
+            // (The classifier will filter by camera later — visually we
+            // want the operator to see the full safety footprint.)
+            // Warning under danger so danger always wins on overlap.
+            var dangerSets = [];
+            var warningSets = [];
+            if (z.sync !== false) {
+                dangerSets.push((z.all && z.all.danger) || []);
+                warningSets.push((z.all && z.all.warning) || []);
+            } else {
+                Object.keys(z.by_camera || {}).forEach(function(cid) {
+                    dangerSets.push((z.by_camera[cid] && z.by_camera[cid].danger) || []);
+                    warningSets.push((z.by_camera[cid] && z.by_camera[cid].warning) || []);
+                });
+            }
+            warningSets.forEach(function(arr) { arr.forEach(function(s) { _addZoneMesh(s, 'warning'); }); });
+            dangerSets.forEach(function(arr)  { arr.forEach(function(s) { _addZoneMesh(s, 'danger');  }); });
+        }).catch(function() {});
+    }
+    window.reloadZones = reloadZones;
+    reloadZones();
+
     // Called from the SSE handler every frame to recolour wedges based
     // on live bump watchdog state. Cheap — just a material tint per
     // camera, no geometry rebuilds. A camera flipping to 'bumped'
@@ -2662,7 +4666,12 @@ function drawDebugBoxes() {
             var d = pool[di++];
             d.g.visible = true;
 
-            var tx = xm, tz = -zm;
+            // World coords go straight to Three.js. The old code negated
+            // z to compensate for a chassis built with the cab on the
+            // wrong side; now that the chassis and the orbit camera both
+            // use front=+Z, the negation must be gone or detections show
+            // up mirrored front-to-back relative to the cab + editor.
+            var tx = xm, tz = zm;
 
             // Smooth interpolation
             if (!curPos[tid]) curPos[tid] = { x: tx, z: tz };

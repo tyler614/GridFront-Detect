@@ -18,6 +18,10 @@
     <!-- Keep screen on -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Audio + phone status for settings UI -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+
     <!-- Auto-start on boot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
@@ -65,6 +69,27 @@
             </intent-filter>
         </activity>
 
+        <!-- Branded power menu — launched on long-press-power via assistant intent -->
+        <activity
+            android:name=".PowerMenuActivity"
+            android:exported="true"
+            android:label=""
+            android:theme="@style/PowerMenuTheme"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:showOnLockScreen="true"
+            android:turnScreenOn="true"
+            android:taskAffinity="io.gridfront.detect.powermenu">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <!-- Device Admin Receiver for Device Owner / kiosk lock -->
         <receiver
             android:name=".AdminReceiver"
@@ -94,5 +119,36 @@
             android:name=".WebServerService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+
+        <!-- VoiceInteractionService — receives long-press-power assist and launches PowerMenuActivity -->
+        <service
+            android:name=".PowerMenuVoiceService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true">
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction_service" />
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".PowerMenuSessionService"
+            android:permission="android.permission.BIND_VOICE_INTERACTION"
+            android:exported="true" />
+
+        <!-- Stub RecognitionService — exists only so the VoiceInteractionService validates. -->
+        <service
+            android:name=".StubRecognitionService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/stub_recognition_service" />
+        </service>
     </application>
 </manifest>
