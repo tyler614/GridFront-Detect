@@ -84,7 +84,7 @@ function resolveChangedFiles() {
   }
 
   const baseRef = process.env.BASE_REF || 'master';
-  const candidates = [`origin/${baseRef}`, baseRef, 'gridfront/master'];
+  const candidates = [`gridfront/${baseRef}`, `origin/${baseRef}`, baseRef];
   for (const ref of candidates) {
     try {
       const out = execSync(`git diff --name-only ${ref}...HEAD`, {
