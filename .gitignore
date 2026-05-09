@@ -48,6 +48,7 @@ models/*.tar.xz
 
 # Temp
 fix_network.ps1
+temp/
 runs/
 training/downloads/
 training/merged/

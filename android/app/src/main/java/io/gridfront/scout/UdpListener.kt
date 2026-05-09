@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicReference
  * Topology today: OAK PoE -> PoE injector -> USB-C Ethernet -> tablet.
  * The OAK target IP is baked at flash time; if the target matches the
  * tablet's USB-C interface IP, packets land here. If it doesn't, this
- * listener sits idle and the WebView falls back to mock mode.
+ * listener sits idle and /api/spatial returns an empty payload.
  */
 class UdpListener(private val port: Int = 5556) {
 

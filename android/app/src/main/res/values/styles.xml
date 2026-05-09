@@ -8,6 +8,13 @@
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
+        <!-- The WebView shows a green teardrop "cursor handle" by default
+             that doesn't match our theme. We use our own in-page keyboard
+             so users never need to drag the caret manually — hiding the
+             handle keeps text inputs clean. -->
+        <item name="android:textSelectHandle">@android:color/transparent</item>
+        <item name="android:textSelectHandleLeft">@android:color/transparent</item>
+        <item name="android:textSelectHandleRight">@android:color/transparent</item>
     </style>
 
     <style name="PowerMenuTheme" parent="Theme.AppCompat.DayNight.NoActionBar">

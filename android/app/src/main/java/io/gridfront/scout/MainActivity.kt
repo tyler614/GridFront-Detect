@@ -14,6 +14,8 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -49,6 +51,9 @@ class MainActivity : AppCompatActivity() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var assetServer: LocalAssetServer? = null
     private var udpListener: UdpListener? = null
+    private lateinit var configStore: ConfigStore
+    private var configSync: ConfigSync? = null
+    private var ethProvisioner: EthernetProvisioner? = null
     private lateinit var bridge: GFBridge
     @Volatile private var pageHasLoaded = false
     private var rebuildAttempts = 0
@@ -62,6 +67,25 @@ class MainActivity : AppCompatActivity() {
         adminComponent = AdminReceiver.getComponentName(this)
 
         bridge = GFBridge(this)
+        // Without ACCESS_FINE_LOCATION the OS redacts WifiManager.connectionInfo
+        // (networkId returns -1, SSID becomes "<unknown>") so the Wi-Fi panel
+        // can never show the connected SSID. We have root, so self-heal the
+        // grant idempotently — runs cheaply on every cold start.
+        bridge.runAsRoot("pm grant ${packageName} android.permission.ACCESS_FINE_LOCATION")
+        bridge.runAsRoot("pm grant ${packageName} android.permission.ACCESS_COARSE_LOCATION")
+        // The kiosk owns the device — system IMEs (Gboard, AOSP latin)
+        // collide with our themed in-page keyboard, so disable every
+        // enabled IME we find. Idempotent: running on each cold start
+        // re-asserts the desired state if anything re-enabled them.
+        try {
+            val enabled = bridge.runAsRoot("ime list -s") ?: ""
+            enabled.lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .forEach { bridge.runAsRoot("ime disable $it") }
+        } catch (e: Throwable) {
+            Log.w(TAG, "ime suppression failed: ${e.message}")
+        }
         webView = buildWebView()
 
         // Restore persisted brightness before first paint.
@@ -76,9 +100,30 @@ class MainActivity : AppCompatActivity() {
         hideSystemUI()
         setupKioskMode()
 
-        // Start UDP listener first — the asset server needs it for /api/spatial.
+        // Config store is the tablet-owned source of truth for zones + camera poses.
+        configStore = ConfigStore(this)
+        // ConfigSync answers camera config_request packets and pushes on edits.
+        configSync = ConfigSync(configStore).also { it.start() }
+        // Camera firmware boots with baked-in zone defaults and waits up to
+        // 30s before its first config_request. If the OAK power-cycled while
+        // the tablet was off, an unsolicited push closes that window so the
+        // operator's saved zones take effect before the first detection frame.
+        val syncRef = configSync
+        Handler(Looper.getMainLooper()).postDelayed({
+            try { syncRef?.pushAll() } catch (e: Throwable) {
+                Log.w(TAG, "boot pushAll failed: ${e.message}")
+            }
+        }, 1_500L)
+        // UDP listener receives detection frames from each camera on :5556.
         udpListener = UdpListener().also { it.start() }
-        assetServer = LocalAssetServer(this, udpListener!!).also { it.start() }
+        // Auto-configure USB-C Ethernet when the OAK chain plugs in.
+        ethProvisioner = EthernetProvisioner().also { it.start() }
+        assetServer = LocalAssetServer(
+            this,
+            udpListener!!,
+            configStore,
+            configSync!!,
+        ).also { it.start() }
 
         // Load the bundled web app
         webView.loadUrl(LOCAL_URL)
@@ -94,13 +139,18 @@ class MainActivity : AppCompatActivity() {
             "gridfront:scout"
         ).apply { acquire() }
 
-        // Start detection service
-        val serviceIntent = Intent(this, WebServerService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
-        } else {
-            startService(serviceIntent)
-        }
+        // Defer FGS start until the activity has had a chance to settle.
+        // Starting it synchronously in onCreate() races the HOME-activity
+        // reparent — AM brings the service down before onCreate() calls
+        // startForeground(), producing a ForegroundServiceDidNotStartInTimeException.
+        Handler(Looper.getMainLooper()).postDelayed({
+            val serviceIntent = Intent(this, WebServerService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+        }, 2_000L)
 
         Log.i(TAG, "GridFront Scout started")
         Log.i(TAG, "Device Owner: ${isDeviceOwner()}")
@@ -111,7 +161,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildWebView(): WebView {
-        val wv = WebView(this)
+        // Subclass so we can swallow the IME's editor connection. Returning
+        // null from onCreateInputConnection tells the framework "this view
+        // is not a text editor" — Android then never spins up the soft
+        // keyboard for it. The WebView's HTML <input>s still receive focus
+        // and our themed in-page keyboard inserts text via JS, so users
+        // see exactly one keyboard (ours) and not the AOSP one fighting
+        // for the bottom of the screen.
+        val wv = object : WebView(this) {
+            override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+                outAttrs.imeOptions = EditorInfo.IME_ACTION_NONE or EditorInfo.IME_FLAG_NO_EXTRACT_UI
+                outAttrs.inputType = EditorInfo.TYPE_NULL
+                return null
+            }
+
+            override fun onCheckIsTextEditor(): Boolean = false
+        }
         wv.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
@@ -269,6 +334,7 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         maybeHandleOpenSettings(intent)
+        maybeHandleReload(intent)
     }
 
     private fun maybeHandleOpenSettings(intent: Intent?) {
@@ -283,6 +349,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun maybeHandleReload(intent: Intent?) {
+        if (intent?.getBooleanExtra(PowerMenuActivity.EXTRA_RELOAD, false) == true) {
+            Log.i(TAG, "Reload intent received — refreshing WebView")
+            webView.post { webView.reload() }
+            intent.removeExtra(PowerMenuActivity.EXTRA_RELOAD)
+        }
+    }
+
     override fun onBackPressed() {
         // In kiosk mode, back button does nothing (or navigates within WebView)
         if (webView.canGoBack()) {
@@ -294,7 +368,9 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         stopService(Intent(this, WebServerService::class.java))
         assetServer?.stop()
+        configSync?.stop()
         udpListener?.stop()
+        ethProvisioner?.stop()
         wakeLock?.release()
         webView.destroy()
         super.onDestroy()

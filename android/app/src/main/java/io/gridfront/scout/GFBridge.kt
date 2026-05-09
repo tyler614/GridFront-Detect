@@ -13,8 +13,6 @@ import android.util.Log
 import android.webkit.JavascriptInterface
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.security.MessageDigest
 import kotlin.math.roundToInt
 
@@ -129,21 +127,29 @@ class GFBridge(private val activity: Activity) {
     fun getWifiInfo(): String {
         val o = JSONObject()
         try {
-            val info = wifi.connectionInfo
             o.put("enabled", wifi.isWifiEnabled)
-            o.put("connected", info != null && info.networkId != -1)
-            o.put("ssid", info?.ssid?.trim('"') ?: "")
-            o.put("rssi", info?.rssi ?: 0)
-            o.put("linkSpeedMbps", info?.linkSpeed ?: 0)
-            val ip = info?.ipAddress ?: 0
-            if (ip != 0) {
-                o.put(
-                    "ip",
-                    "${ip and 0xFF}.${(ip shr 8) and 0xFF}.${(ip shr 16) and 0xFF}.${(ip shr 24) and 0xFF}"
-                )
-            } else {
-                o.put("ip", "")
-            }
+            // Even with ACCESS_FINE_LOCATION granted, Android 11+ redacts
+            // WifiManager.connectionInfo when system "location services"
+            // are off — networkId becomes -1 and the SSID returns
+            // "<unknown>". This is a kiosk with location services
+            // permanently off, so parse `cmd wifi status` via root for
+            // the authoritative state instead.
+            val raw = runAsRoot("cmd wifi status") ?: ""
+            val ssidMatch = Regex("""WifiInfo:\s+SSID:\s+"([^"]*)"""").find(raw)
+            val ssid = ssidMatch?.groupValues?.get(1) ?: ""
+            val ipMatch = Regex("""IP:\s+/([0-9.]+)""").find(raw)
+            val ip = ipMatch?.groupValues?.get(1) ?: ""
+            val rssiMatch = Regex("""RSSI:\s+(-?\d+)""").find(raw)
+            val rssi = rssiMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val speedMatch = Regex("""Link speed:\s+(\d+)Mbps""").find(raw)
+            val speed = speedMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val supplicantOk = raw.contains("Supplicant state: COMPLETED")
+            val connectedLine = raw.contains("Wifi is connected to")
+            o.put("connected", supplicantOk && connectedLine && ssid.isNotEmpty())
+            o.put("ssid", ssid)
+            o.put("rssi", rssi)
+            o.put("linkSpeedMbps", speed)
+            o.put("ip", ip)
         } catch (e: Exception) {
             o.put("error", e.message ?: "unknown")
         }
@@ -158,12 +164,32 @@ class GFBridge(private val activity: Activity) {
             o.put("carrier", telephony.networkOperatorName ?: "")
             o.put("operator", telephony.networkOperator ?: "")
             o.put("dataState", dataStateLabel(telephony.dataState))
+            // `settings get global mobile_data` reflects the user-facing
+            // toggle state, which is what the operator expects to see in
+            // the UI — `telephony.dataState` only flips when there's an
+            // active data connection, so it would lie if mobile data was
+            // turned on with no carrier.
+            val raw = runAsRoot("settings get global mobile_data")?.trim()
+            o.put("dataEnabled", raw == "1")
         } catch (e: SecurityException) {
             o.put("error", "permission_denied")
         } catch (e: Exception) {
             o.put("error", e.message ?: "unknown")
         }
         return o.toString()
+    }
+
+    @JavascriptInterface
+    fun setMobileDataEnabled(enabled: Boolean) {
+        // `svc data` alone is a no-op on this MTK build — `settings get
+        // global mobile_data` stays at "1" regardless. Writing the global
+        // setting directly is what the framework actually honours; pair it
+        // with `svc data` so the live data connection follows the toggle
+        // (otherwise the radio stays attached even after the user flips it
+        // off).
+        val v = if (enabled) "1" else "0"
+        runAsRoot("settings put global mobile_data $v")
+        runAsRoot("svc data ${if (enabled) "enable" else "disable"}")
     }
 
     @JavascriptInterface
@@ -294,26 +320,7 @@ class GFBridge(private val activity: Activity) {
         else -> "unknown"
     }
 
-    private fun runAsRoot(cmd: String): String? {
-        return try {
-            // Pipe stderr into stdout so error output isn't lost. Some `cmd`
-            // subcommands (notably `cmd wifi list-scan-results`) emit to stderr
-            // when invoked through Magisk's su non-interactive shell.
-            val p = ProcessBuilder("su", "-c", "$cmd 2>&1")
-                .redirectErrorStream(true)
-                .start()
-            val reader = BufferedReader(InputStreamReader(p.inputStream))
-            val sb = StringBuilder()
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                sb.append(line).append('\n')
-            }
-            val rc = p.waitFor()
-            if (rc != 0) Log.w(TAG, "su rc=$rc for '$cmd', out=${sb.take(200)}")
-            sb.toString()
-        } catch (e: Exception) {
-            Log.w(TAG, "su failed for '$cmd': ${e.message}")
-            null
-        }
+    internal fun runAsRoot(cmd: String): String? {
+        return RootShell.run(cmd)
     }
 }

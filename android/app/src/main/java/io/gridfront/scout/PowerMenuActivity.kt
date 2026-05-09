@@ -16,6 +16,11 @@ class PowerMenuActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "GF_PowerMenu"
         const val EXTRA_OPEN_SETTINGS = "gridfront.OPEN_SETTINGS"
+        // adb-triggerable WebView reload: keeps the dev override workflow
+        // (push HTML to /data/local/tmp/gridfront_web/, fire reload) tight
+        // without forcing a full device reboot.
+        //   am start -n io.gridfront.scout/.MainActivity --ez gridfront.RELOAD true
+        const val EXTRA_RELOAD = "gridfront.RELOAD"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
