@@ -65,6 +65,12 @@ The important ports are:
 
 ## Common Commands
 
+Check that package, Android, and release-note versions agree:
+
+```powershell
+node scripts/check-version-sync.js
+```
+
 Build the Android debug APK:
 
 ```powershell
@@ -94,6 +100,23 @@ Query the running tablet app through ADB:
 ```powershell
 C:\Users\helve\Android\Sdk\platform-tools\adb.exe -s 192.168.68.62:5555 shell "curl -s http://127.0.0.1:8080/api/camera/status"
 ```
+
+## Versioning
+
+This repo follows the same humanized release-note model as
+`platform.gridfront.io`, adapted for the tablet/OAK app.
+
+- `package.json` is the canonical semantic version.
+- `android/app/build.gradle.kts` carries the Android `versionName` and
+  monotonically increasing `versionCode`.
+- `release-notes.json` is the version-history source of truth.
+- `scripts/bump-version.js` bumps semver, increments Android `versionCode`,
+  and promotes pending release notes into history.
+- `.github/workflows/release-on-master.yml` tags the first merged baseline as
+  `v0.1.0`; later pushes to `master` bump and tag automatically.
+
+For user-visible changes, edit `release-notes.json` before merging. See
+`docs/release-notes-style.md` for the writing guide.
 
 ## Known Paper Cuts
 

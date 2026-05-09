@@ -1,0 +1,28 @@
+{
+  "pending": [
+    {
+      "title": "No user-visible changes pending",
+      "kind": "patch",
+      "description": "Placeholder for the next release. Authors of user-visible changes replace this entry with humanized notes before merging.",
+      "items": []
+    }
+  ],
+  "releases": [
+    {
+      "version": "0.1.0",
+      "date": "2026-05-09",
+      "notes": [
+        {
+          "title": "GridFront Scout version 0 baseline",
+          "kind": "minor",
+          "description": "This is the first tracked version of the OAK standalone tablet app: the tablet owns setup and display, while the OAK-D camera runs perception and sends live proximity detections.",
+          "items": [
+            "The Oukitel tablet runs a locked-down GridFront Scout kiosk with a live cab radar and field-service settings.",
+            "The OAK-D standalone pipeline performs detection, depth, tracking, coordinate transform, and zone classification on the camera.",
+            "Tablet and camera communicate over the direct USB-C Ethernet link using UDP detection packets on 5556 and config sync on 5557."
+          ]
+        }
+      ]
+    }
+  ]
+}
