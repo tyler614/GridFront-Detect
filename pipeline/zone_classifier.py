@@ -1,4 +1,4 @@
-"""Classify detections into DANGER / WARNING / CLEAR zones.
+"""Classify detections into red / yellow / outside zones.
 
 Zone distance is measured from the detection to the nearest edge of the
 machine's bounding-box footprint — *not* from the machine centre.  This
@@ -14,6 +14,21 @@ import math
 from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
+
+ZONE_NONE = 0
+ZONE_OUTSIDE = 1
+ZONE_YELLOW = 2
+ZONE_RED = 3
+
+
+def zone_name_from_code(code: int) -> str:
+    if code == ZONE_RED:
+        return "red"
+    if code == ZONE_YELLOW:
+        return "yellow"
+    if code == ZONE_NONE:
+        return "none"
+    return "outside"
 
 
 class ZoneClassifier:
@@ -47,7 +62,7 @@ class ZoneClassifier:
     # Single detection
     # ------------------------------------------------------------------
 
-    def classify(self, detection: dict) -> Tuple[str, float]:
+    def classify(self, detection: dict) -> Tuple[int, str, float]:
         """Classify one detection by its distance to the machine bounding box edge.
 
         The machine footprint is an axis-aligned rectangle centred at the
@@ -55,7 +70,7 @@ class ZoneClassifier:
         ``[-half_length, half_length]`` in Z.
 
         Returns:
-            ``(zone_label, edge_distance_m)``
+            ``(zone_code, zone_label, edge_distance_m)``
         """
         x = detection["x_m"]
         z = detection["z_m"]
@@ -68,13 +83,13 @@ class ZoneClassifier:
         dz = z - nearest_z
         edge_dist = math.sqrt(dx * dx + dz * dz)
 
-        # If the detection is *inside* the box, edge_dist is 0 -> DANGER
+        # If the detection is *inside* the box, edge_dist is 0 -> red.
         if edge_dist <= self.danger_m:
-            return "DANGER", edge_dist
+            return ZONE_RED, "red", edge_dist
         elif edge_dist <= self.warning_m:
-            return "WARNING", edge_dist
+            return ZONE_YELLOW, "yellow", edge_dist
         else:
-            return "CLEAR", edge_dist
+            return ZONE_OUTSIDE, "outside", edge_dist
 
     # ------------------------------------------------------------------
     # Batch classification
@@ -83,22 +98,24 @@ class ZoneClassifier:
     def classify_all(self, detections: List[dict]) -> List[dict]:
         """Classify a list of detections in place.
 
-        Adds ``zone``, ``distance_m``, and ``bearing_deg`` fields to each
-        detection dict.  Detections beyond ``max_range_m`` are tagged CLEAR
+        Adds ``zone_code``, ``zone``, ``distance_m``, and ``bearing_deg`` fields
+        to each detection dict. Detections beyond ``max_range_m`` are outside
         but still included (the UI may choose to hide them).
 
         Returns:
             The same list, mutated, for convenience.
         """
         for det in detections:
-            zone, dist = self.classify(det)
+            zone_code, zone, dist = self.classify(det)
             # Fail-loud: any detection tagged ``unsafe`` (camera bumped,
             # IMU lost, mount likely shifted) is promoted straight to
-            # DANGER regardless of geometric distance. The zone we
+            # red regardless of geometric distance. The zone we
             # *computed* is no longer trustworthy for that camera, so
             # we refuse to report anything softer.
             if det.get("unsafe"):
-                zone = "DANGER"
+                zone_code = ZONE_RED
+                zone = "red"
+            det["zone_code"] = zone_code
             det["zone"] = zone
             det["distance_m"] = round(dist, 2)
             det["bearing_deg"] = round(

@@ -10,7 +10,7 @@
   "releases": [
     {
       "version": "0.1.0",
-      "date": "2026-05-09",
+      "date": "2026-05-10",
       "notes": [
         {
           "title": "GridFront Scout version 0 baseline",
@@ -19,7 +19,9 @@
           "items": [
             "The Oukitel tablet runs a locked-down GridFront Scout kiosk with a live cab radar and field-service settings.",
             "The OAK-D standalone pipeline performs detection, depth, tracking, coordinate transform, and zone classification on the camera.",
-            "Tablet and camera communicate over the direct USB-C Ethernet link using UDP detection packets on 5556 and config sync on 5557."
+            "Tablet and camera communicate over the direct USB-C Ethernet link using UDP detection packets on 5556 and config sync on 5557.",
+            "Detection messages now use schema 1 with numeric scene and zone codes: 0 for no detections, 1 for outside-zone detections, 2 for yellow-zone detections, and 3 for red-zone detections.",
+            "The Scout ecosystem technical overview PDF documents the product architecture, live JSON payloads, config sync, and planned multi-camera behavior for up to six OAK-D cameras on one tablet."
           ]
         }
       ]

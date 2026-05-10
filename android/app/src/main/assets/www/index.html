@@ -1033,7 +1033,7 @@
                 <div class="status-dot"></div><span id="mode-text">LIVE</span>
             </div>
             <div class="status-pill pill-clear" id="zone-pill">
-                <span id="zone-text">CLEAR</span>
+                <span id="zone-text">NO DETECTIONS</span>
             </div>
             <div class="status-pill pill-conn-wait" id="conn-pill" title="Camera connection">
                 <span id="conn-text">CONNECTING</span>
@@ -1069,7 +1069,7 @@
 
     <div class="panels" id="gf-panels">
         <div class="cab-panel" id="cab-panel">
-            <div class="overlay-zone" id="overlay-zone"><span id="overlay-zone-text">CLEAR</span></div>
+            <div class="overlay-zone" id="overlay-zone"><span id="overlay-zone-text">NO DETECTIONS</span></div>
             <div class="overlay-nearest" id="overlay-nearest"><span class="nearest-label">NEAREST</span><span id="overlay-nearest-text">--</span></div>
             <div class="cab-display-frame">
                 <svg class="cab-display-svg" id="cab-display" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
@@ -1302,7 +1302,7 @@
                 <h2 style="margin:0;">Cameras</h2>
                 <button class="btn-primary" onclick="addCamera()" style="padding:7px 14px; font-size:13px;">+ Add</button>
             </div>
-            <p>Each camera's mount pose is set here — position on the machine, yaw, HFOV and max range. The tablet pushes this config to the camera over UDP; the camera pre-classifies every detection (danger / warning / clear) before sending it back for display.</p>
+            <p>Each camera's mount pose is set here — position on the machine, yaw, HFOV and max range. The tablet pushes this config to the camera over UDP; the camera pre-classifies every detection into numeric scene states before sending it back for display.</p>
 
             <div id="cameras-grid" style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
                 <div style="font-size:13px; color: hsl(var(--muted-foreground));">Loading cameras…</div>
@@ -1310,14 +1310,14 @@
         </div>
         <div class="settings-section">
             <h2>Detection Zones</h2>
-            <p>Distance from the machine edge. A 1.5&nbsp;m danger zone alerts whenever a person is within 1.5&nbsp;m of the machine on any side. Cameras classify every detection (danger / warning / clear) before sending it to the display.</p>
+            <p>Distance from the machine edge. A 1.5&nbsp;m red zone alerts whenever a person is within 1.5&nbsp;m of the machine on any side. Cameras classify every detection as outside, yellow, or red before sending it to the display.</p>
             <div class="gf-row">
                 <div class="gf-field">
-                    <label class="gf-label" for="set-zone-danger" style="color: hsl(var(--destructive));">Danger</label>
+                    <label class="gf-label" for="set-zone-danger" style="color: hsl(var(--destructive));">Red</label>
                     <input class="gf-input" id="set-zone-danger" type="number" step="0.5" min="0.5" oninput="autoSaveZones()" />
                 </div>
                 <div class="gf-field">
-                    <label class="gf-label" for="set-zone-warning" style="color: hsl(var(--warning));">Warning</label>
+                    <label class="gf-label" for="set-zone-warning" style="color: hsl(var(--warning));">Yellow</label>
                     <input class="gf-input" id="set-zone-warning" type="number" step="0.5" min="0.5" oninput="autoSaveZones()" />
                 </div>
             </div>
@@ -1327,7 +1327,7 @@
         <div class="tab-panel" data-panel="alerts">
         <div class="settings-section">
             <h2>Alerts</h2>
-            <p>Audible alarms when detections enter warning or danger zones.</p>
+            <p>Audible alarms when detections enter yellow or red zones.</p>
             <div class="gf-kv">
                 <div>
                     <div class="gf-kv-label">Sound alerts</div>
@@ -1345,7 +1345,7 @@
             <div class="gf-kv">
                 <div>
                     <div class="gf-kv-label">Danger alarm</div>
-                    <div class="gf-kv-sub">Repeating alarm for danger zone</div>
+                    <div class="gf-kv-sub">Repeating alarm for red zone</div>
                 </div>
                 <select class="gf-select" id="set-sound-danger" style="max-width:140px;" onchange="previewSound(this.value)">
                     <option value="alarm">Alarm</option>
@@ -1356,7 +1356,7 @@
             <div class="gf-kv">
                 <div>
                     <div class="gf-kv-label">Warning chime</div>
-                    <div class="gf-kv-sub">Single tone for warning zone</div>
+                    <div class="gf-kv-sub">Single tone for yellow zone</div>
                 </div>
                 <select class="gf-select" id="set-sound-warning" style="max-width:140px;" onchange="previewSound(this.value)">
                     <option value="chime">Chime</option>
@@ -1437,7 +1437,7 @@
                     <button class="btn-secondary" onclick="clearActivityLog()" style="padding:6px 12px; font-size:12px;">Clear</button>
                 </div>
             </div>
-            <p>Live event log. Captures detection-track entries into warning/danger zones and connection state changes. Last 200 events, in-memory only.</p>
+            <p>Live event log. Captures detection-track entries into yellow/red zones and connection state changes. Last 200 events, in-memory only.</p>
             <div id="activity-log" style="margin-top:8px; max-height:60vh; overflow-y:auto; border:1px solid hsl(var(--border)); border-radius: var(--radius); padding:6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; line-height:1.55;">
                 <div class="gf-kv-sub" style="padding:8px;">No events yet — waiting for detections.</div>
             </div>
@@ -1859,7 +1859,7 @@ function _sfxPlay(type, pattern) {
 // danger ring. Warning: single chime when zone transitions UP into
 // warning, then quiet until the next clear→warning transition (avoids
 // nagging beeps while a person is just standing in the warning ring).
-var _alarmZone = 'clear';      // last reported state
+var _alarmZoneCode = ZONE_NONE; // last reported scene state
 var _dangerLoop = null;        // setInterval handle while looping
 function _soundEnabled() {
     var t = document.getElementById('set-sound-enabled');
@@ -1881,18 +1881,18 @@ function _startDangerLoop() {
 function _stopDangerLoop() {
     if (_dangerLoop) { clearInterval(_dangerLoop); _dangerLoop = null; }
 }
-function updateAlarms(anyDanger, anyWarn) {
-    var zone = anyDanger ? 'danger' : (anyWarn ? 'warning' : 'clear');
-    if (zone === _alarmZone) return;
-    var prev = _alarmZone;
-    _alarmZone = zone;
-    if (zone === 'danger') {
+function updateAlarms(sceneCode) {
+    sceneCode = Number(sceneCode) || ZONE_NONE;
+    if (sceneCode === _alarmZoneCode) return;
+    var prev = _alarmZoneCode;
+    _alarmZoneCode = sceneCode;
+    if (sceneCode === ZONE_RED) {
         _startDangerLoop();
-    } else if (zone === 'warning') {
+    } else if (sceneCode === ZONE_YELLOW) {
         _stopDangerLoop();
         // Only chime on UP transitions into warning, not on
         // danger→warning de-escalation (already alarming).
-        if (prev === 'clear' && _soundEnabled()) {
+        if (prev <= ZONE_OUTSIDE && _soundEnabled()) {
             previewSound(_selSound('set-sound-warning', 'chime'));
         }
     } else {
@@ -2172,11 +2172,11 @@ function loadSettingsFields() {
         // from whichever entry carries the matching color. Server
         // stores meters; UI shows display unit so we cache the meter
         // values on window._zoneRadiiM and re-seed on a unit flip.
-        var danger  = _findZoneByColor(cfg.zones, 'danger');
-        var warning = _findZoneByColor(cfg.zones, 'warning');
-        var dM = danger  ? danger.r_m  : 3.5;
-        var wM = warning ? warning.r_m : 6.0;
-        window._zoneRadiiM = { danger: dM, warning: wM };
+        var redZone = _findZoneByLabel(cfg.zones, 'red');
+        var yellowZone = _findZoneByLabel(cfg.zones, 'yellow');
+        var dM = redZone  ? redZone.r_m  : 3.5;
+        var wM = yellowZone ? yellowZone.r_m : 6.0;
+        window._zoneRadiiM = { red: dM, yellow: wM, danger: dM, warning: wM };
         _setVal('set-zone-danger',  fmtNum(mToDisp(dM)));
         _setVal('set-zone-warning', fmtNum(mToDisp(wM)));
         relabelZoneInputs();
@@ -2216,10 +2216,10 @@ function _num(id, fallback) {
     return isFinite(v) ? v : fallback;
 }
 
-function _findZoneByColor(zones, color) {
+function _findZoneByLabel(zones, label) {
     if (!zones || !zones.length) return null;
     for (var i = 0; i < zones.length; i++) {
-        if (zones[i] && zones[i].color === color) return zones[i];
+        if (zones[i] && configZoneName(zones[i]) === label) return zones[i];
     }
     return null;
 }
@@ -2276,11 +2276,11 @@ function autoSaveZones() {
         var dispW = _num('set-zone-warning', mToDisp(6.0));
         var dM = dispToM(dispD);
         var wM = dispToM(dispW);
-        window._zoneRadiiM = { danger: dM, warning: wM };
+        window._zoneRadiiM = { red: dM, yellow: wM, danger: dM, warning: wM };
         var body = {
             zones: [
-                { id: 'z-1', color: 'danger',  cx_m: 0, cy_m: 0, r_m: dM },
-                { id: 'z-2', color: 'warning', cx_m: 0, cy_m: 0, r_m: wM }
+                { id: 'red-inner', label: 'red', zone: 'red', color: 'red', display_color: 'red', severity_code: 3, cx_m: 0, cy_m: 0, r_m: dM },
+                { id: 'yellow-outer', label: 'yellow', zone: 'yellow', color: 'yellow', display_color: 'yellow', severity_code: 2, cx_m: 0, cy_m: 0, r_m: wM }
             ]
         };
         fetch('/api/zones', {
@@ -2601,9 +2601,9 @@ function refreshUnitDependentUI() {
 }
 function relabelZoneInputs() {
     var d = document.querySelector('label[for="set-zone-danger"]');
-    if (d) d.textContent = 'Danger (' + unitLabel() + ')';
+    if (d) d.textContent = 'Red (' + unitLabel() + ')';
     var w = document.querySelector('label[for="set-zone-warning"]');
-    if (w) w.textContent = 'Warning (' + unitLabel() + ')';
+    if (w) w.textContent = 'Yellow (' + unitLabel() + ')';
     ['set-zone-danger', 'set-zone-warning'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.step = unitStep();
@@ -2634,8 +2634,8 @@ function reseedZoneInputs() {
     if (!z) return;
     var d = document.getElementById('set-zone-danger');
     var w = document.getElementById('set-zone-warning');
-    if (d) d.value = fmtNum(mToDisp(z.danger));
-    if (w) w.value = fmtNum(mToDisp(z.warning));
+    if (d) d.value = fmtNum(mToDisp(z.red != null ? z.red : z.danger));
+    if (w) w.value = fmtNum(mToDisp(z.yellow != null ? z.yellow : z.warning));
 }
 function formatDist(m) {
     if (m == null || isNaN(m)) return '--';
@@ -2663,7 +2663,7 @@ var GF_CFG = {
     machine_type: '',
     machine_footprint_m: { length: 8.0, width: 2.5 },
     installed_cameras: [],
-    zones: []   // [{id, color:"danger|warning", cx_m, cy_m, r_m}, ...]
+    zones: []   // [{id, label:"red|yellow", severity_code, cx_m, cy_m, r_m}, ...]
 };
 
 // ── Radar (cab-display) ────────────────────────────────────
@@ -2680,8 +2680,44 @@ var CAB_RANGE_M = 12;              // outer ring radius, auto-adjusts to fit zon
 var CAB_LERP = 1.0;
 var CAB_DOT_TTL_MS = 1200;
 
+var ZONE_NONE = 0;      // no detections in the scene
+var ZONE_OUTSIDE = 1;   // detection present, outside configured zones
+var ZONE_YELLOW = 2;    // detection inside yellow zone
+var ZONE_RED = 3;       // detection inside red zone
+
+function zoneNameFromCode(code) {
+    code = Number(code);
+    if (code === ZONE_RED) return 'red';
+    if (code === ZONE_YELLOW) return 'yellow';
+    if (code === ZONE_NONE) return 'none';
+    return 'outside';
+}
+function zoneCodeFromName(name) {
+    var z = String(name || '').toLowerCase();
+    if (z === 'danger' || z === 'red') return ZONE_RED;
+    if (z === 'warning' || z === 'yellow') return ZONE_YELLOW;
+    if (z === 'clear' || z === 'outside' || z === 'none') return ZONE_OUTSIDE;
+    return ZONE_OUTSIDE;
+}
+function zoneCodeFromDetection(det) {
+    if (det && det.zone_code != null && !isNaN(Number(det.zone_code))) {
+        var code = Math.max(ZONE_OUTSIDE, Math.min(ZONE_RED, Number(det.zone_code)));
+        return code;
+    }
+    return zoneCodeFromName(det && (det.zone || det.legacy_zone || det.zone_label || det.color));
+}
+function zoneNameFromDetection(det) {
+    return zoneNameFromCode(zoneCodeFromDetection(det));
+}
+function configZoneName(z) {
+    return zoneNameFromCode(zoneCodeFromName(z && (z.label || z.zone || z.color)));
+}
+
 var cabDots = {};                  // track_id -> { x_m, y_m, lastSeen, nodes }
 var CAB_COLOR = {
+    red:     '#fecaca',
+    yellow:  '#fde68a',
+    outside: '#7dd3fc',
     danger:  '#fecaca',
     warning: '#fde68a',
     clear:   '#7dd3fc'
@@ -2726,16 +2762,17 @@ function _renderZonesLayer() {
     var halfLenM = (+fp.length || 0) / 2;
     var halfWidM = (+fp.width  || 0) / 2;
     var scale = _cabScale();
-    // Sort largest-first so warning draws under danger and the danger
-    // ring stays visible on top when both are configured.
+    // Sort largest-first so yellow draws under red and the red ring
+    // stays visible on top when both are configured.
     var sorted = (GF_CFG.zones || []).slice().sort(function(a, b) {
         return (+b.r_m || 0) - (+a.r_m || 0);
     });
     sorted.forEach(function(z) {
         var offM = +z.r_m || 0;
         if (offM <= 0) return;
-        var color = z.color === 'danger' ? '#ef4444'
-                  : z.color === 'warning' ? '#f59e0b'
+        var zoneName = configZoneName(z);
+        var color = zoneName === 'red' ? '#ef4444'
+                  : zoneName === 'yellow' ? '#f59e0b'
                   : '#3b82f6';
         // Rounded-rect "expansion" of the machine outline: width/length
         // grow by 2*offset, corner radius equals offset. Every point on
@@ -2753,7 +2790,7 @@ function _renderZonesLayer() {
             fill: 'none',
             stroke: color,
             'stroke-width': '1.2',
-            'stroke-dasharray': z.color === 'warning' ? '3 3' : '0',
+            'stroke-dasharray': zoneName === 'yellow' ? '3 3' : '0',
             opacity: '0.85'
         }));
     });
@@ -2932,10 +2969,11 @@ function _renderActivityLog() {
         var e = _activityLog[i];
         var t = _activityTimeStr(e.ts);
         if (e.kind === 'zone') {
-            var color = e.zone === 'danger'  ? 'hsl(0 84% 60%)'
-                      : e.zone === 'warning' ? 'hsl(38 92% 50%)'
+            var eCode = zoneCodeFromName(e.zone);
+            var color = eCode === ZONE_RED ? 'hsl(0 84% 60%)'
+                      : eCode === ZONE_YELLOW ? 'hsl(38 92% 50%)'
                       : 'hsl(var(--muted-foreground))';
-            var tag = e.zone.toUpperCase();
+            var tag = zoneNameFromCode(eCode).toUpperCase();
             var dist = (e.dist_m == null) ? '' : ' · ' + formatDist(e.dist_m);
             var cam  = e.cam ? ' · ' + _esc(e.cam) : '';
             rows.push(
@@ -2975,14 +3013,14 @@ function updateCabDisplay(detections) {
     if (!grp) return;
     var now = performance.now();
     var seen = {};
-    var anyDanger = false, anyWarn = false;
+    var sceneCode = detections.length ? ZONE_OUTSIDE : ZONE_NONE;
 
     detections.forEach(function(det) {
         var xm = +det.x_m || 0;
         var ym = +det.y_m || 0;
-        var zone = det.zone || 'clear';
-        if (zone === 'danger')  anyDanger = true;
-        if (zone === 'warning') anyWarn = true;
+        var zoneCode = zoneCodeFromDetection(det);
+        var zone = zoneNameFromCode(zoneCode);
+        if (zoneCode > sceneCode) sceneCode = zoneCode;
         var tid = det.track_id;
         if (tid == null) {
             tid = 'u' + (det.label || '?') + '_' +
@@ -3027,8 +3065,8 @@ function updateCabDisplay(detections) {
         var prevZone = _trackZoneCache[tid];
         if (prevZone !== zone) {
             _trackZoneCache[tid] = zone;
-            if (zone === 'danger' || zone === 'warning' ||
-                (prevZone && prevZone !== 'clear' && zone === 'clear')) {
+            if (zoneCode >= ZONE_YELLOW ||
+                (prevZone && zoneCodeFromName(prevZone) >= ZONE_YELLOW && zoneCode === ZONE_OUTSIDE)) {
                 logActivity(zone, det.label || 'object', dm, det._cam || '');
             }
         }
@@ -3045,14 +3083,15 @@ function updateCabDisplay(detections) {
 
     var bg = document.getElementById('cab-bg-disc');
     if (bg) {
-        bg.classList.toggle('cab-bg-danger', anyDanger);
-        bg.classList.toggle('cab-bg-warn',   !anyDanger && anyWarn);
+        bg.classList.toggle('cab-bg-danger', sceneCode === ZONE_RED);
+        bg.classList.toggle('cab-bg-warn',   sceneCode === ZONE_YELLOW);
     }
 
-    // Stash the active zone so updateHud can paint the status pill
+    // Stash the active scene state so updateHud can paint the status pill
     // with the right color, and trigger audible alarms on transitions.
-    window._lastZoneState = anyDanger ? 'danger' : (anyWarn ? 'warning' : 'clear');
-    updateAlarms(anyDanger, anyWarn);
+    window._lastZoneState = zoneNameFromCode(sceneCode);
+    window._lastSceneStateCode = sceneCode;
+    updateAlarms(sceneCode);
 }
 
 var currentDetections = [];
@@ -3133,17 +3172,17 @@ function renderHud() {
     var zonePill = document.getElementById('zone-pill');
     var zoneText = document.getElementById('zone-text');
     if (zonePill && zoneText) {
-        var state = window._lastZoneState || 'clear';
-        var cls = state === 'danger' ? 'pill-danger'
-                : state === 'warning' ? 'pill-warning'
+        var stateCode = window._lastSceneStateCode != null ? window._lastSceneStateCode : ZONE_NONE;
+        var cls = stateCode === ZONE_RED ? 'pill-danger'
+                : stateCode === ZONE_YELLOW ? 'pill-warning'
                 : 'pill-clear';
         zonePill.className = 'status-pill ' + cls;
         if (merged.length === 0) {
-            zoneText.textContent = 'CLEAR';
-        } else if (state === 'danger') {
-            zoneText.textContent = 'DANGER · ' + (closestM != null ? formatDist(closestM) : merged.length);
-        } else if (state === 'warning') {
-            zoneText.textContent = 'WARNING · ' + (closestM != null ? formatDist(closestM) : merged.length);
+            zoneText.textContent = 'NO DETECTIONS';
+        } else if (stateCode === ZONE_RED) {
+            zoneText.textContent = 'RED - ' + (closestM != null ? formatDist(closestM) : merged.length);
+        } else if (stateCode === ZONE_YELLOW) {
+            zoneText.textContent = 'YELLOW - ' + (closestM != null ? formatDist(closestM) : merged.length);
         } else if (closestM != null) {
             zoneText.textContent = 'TRACKING ' + merged.length + ' · ' + formatDist(closestM);
         } else {
@@ -3154,14 +3193,14 @@ function renderHud() {
     // Floating overlays — only present when there's something to say.
     var ovZone = document.getElementById('overlay-zone');
     var ovZoneText = document.getElementById('overlay-zone-text');
-    var stateNow = window._lastZoneState || 'clear';
+    var stateNow = window._lastSceneStateCode != null ? window._lastSceneStateCode : ZONE_NONE;
     if (ovZone && ovZoneText) {
         ovZone.classList.remove('show', 'show-warning', 'show-danger');
-        if (stateNow === 'danger') {
-            ovZoneText.textContent = 'DANGER';
+        if (stateNow === ZONE_RED) {
+            ovZoneText.textContent = 'RED';
             ovZone.classList.add('show', 'show-danger');
-        } else if (stateNow === 'warning') {
-            ovZoneText.textContent = 'WARNING';
+        } else if (stateNow === ZONE_YELLOW) {
+            ovZoneText.textContent = 'YELLOW';
             ovZone.classList.add('show', 'show-warning');
         }
     }

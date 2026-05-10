@@ -57,7 +57,7 @@ def _extract_pose_and_zones(cfg: dict, camera_id: str) -> tuple[float, float, fl
     """Pull initial pose, zones, and machine footprint out of config.json.
 
     Returns (pos_x_m, pos_y_m, yaw_deg, zones, machine_len_m, machine_wid_m).
-    Zone shape is [{"color": "danger"|"warning", "r": meters}] where r is
+    Zone shape is [{"id", "zone", "severity_code", "r"}] where r is
     distance from the machine edge — the OAK's classify() does point-to-
     rectangle distance using (machine_len, machine_wid) as the rectangle.
     """
@@ -90,9 +90,9 @@ def _extract_pose_and_zones(cfg: dict, camera_id: str) -> tuple[float, float, fl
         danger = raw.get("danger_m")
         warning = raw.get("warning_m")
         if isinstance(danger, (int, float)):
-            zones.append({"color": "danger", "r": float(danger)})
+            zones.append({"id": "red-inner", "zone": "red", "severity_code": 3, "r": float(danger)})
         if isinstance(warning, (int, float)):
-            zones.append({"color": "warning", "r": float(warning)})
+            zones.append({"id": "yellow-outer", "zone": "yellow", "severity_code": 2, "r": float(warning)})
     elif isinstance(raw, list):
         for z in raw:
             if not isinstance(z, dict):
@@ -100,8 +100,19 @@ def _extract_pose_and_zones(cfg: dict, camera_id: str) -> tuple[float, float, fl
             r = z.get("r_m")
             if not isinstance(r, (int, float)):
                 continue
-            zones.append({"color": str(z.get("color", "warning")),
-                          "r":     float(r)})
+            label = str(z.get("label", z.get("zone", z.get("color", "yellow")))).lower()
+            if label == "danger":
+                label = "red"
+            elif label == "warning":
+                label = "yellow"
+            elif label == "clear":
+                label = "outside"
+            code = int(z.get("severity_code", z.get("zone_code",
+                       3 if label == "red" else 2 if label == "yellow" else 1)))
+            zones.append({"id": str(z.get("id", "")),
+                          "zone": label,
+                          "severity_code": code,
+                          "r": float(r)})
 
     return pos_x, pos_y, yaw_deg, zones, machine_len, machine_wid
 

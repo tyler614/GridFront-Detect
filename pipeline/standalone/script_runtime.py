@@ -61,6 +61,38 @@ state = {
     "last_send":     0.0,
 }
 
+ZONE_NONE = 0
+ZONE_OUTSIDE = 1
+ZONE_YELLOW = 2
+ZONE_RED = 3
+
+def zone_name(raw):
+    v = str(raw or "").lower()
+    if v == "danger" or v == "red":
+        return "red"
+    if v == "warning" or v == "yellow":
+        return "yellow"
+    if v == "clear" or v == "outside" or v == "none":
+        return "outside"
+    return "yellow"
+
+def zone_code(name):
+    n = zone_name(name)
+    if n == "red":
+        return ZONE_RED
+    if n == "yellow":
+        return ZONE_YELLOW
+    return ZONE_OUTSIDE
+
+def zone_name_from_code(code):
+    if code == ZONE_RED:
+        return "red"
+    if code == ZONE_YELLOW:
+        return "yellow"
+    if code == ZONE_NONE:
+        return "none"
+    return "outside"
+
 tx_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 cfg_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 cfg_sock.bind(("", CONFIG_PORT))
@@ -87,9 +119,18 @@ def apply_config(doc):
             # from the machine rectangle.
             new_zones = []
             for z in doc["zones"]:
+                z_name = zone_name(z.get("label", z.get("zone", z.get("color", "yellow"))))
+                try:
+                    z_code = int(z.get("severity_code", z.get("zone_code", zone_code(z_name))))
+                except Exception:
+                    z_code = zone_code(z_name)
+                if z_code < ZONE_OUTSIDE: z_code = ZONE_OUTSIDE
+                if z_code > ZONE_RED: z_code = ZONE_RED
                 new_zones.append({
-                    "color": str(z.get("color", "warning")),
-                    "r":     float(z.get("r_m", 0.0)),
+                    "id":    str(z.get("id", "")),
+                    "zone":  zone_name_from_code(z_code),
+                    "code":  z_code,
+                    "r":     float(z.get("r_m", z.get("r", 0.0))),
                 })
             state["zones"] = new_zones
         if "machine_footprint_m" in doc and doc["machine_footprint_m"] is not None:
@@ -144,15 +185,20 @@ def classify(mx, my):
     if dy < 0: dy = 0.0
     edge_dist = math.sqrt(dx * dx + dy * dy)
 
-    # Danger wins over warning wins over clear.
-    best = "clear"
+    # Larger zone codes are more urgent: outside=1, yellow=2, red=3.
+    best_code = ZONE_OUTSIDE
+    best_id = ""
     for z in state["zones"]:
         if edge_dist <= z["r"]:
-            if z["color"] == "danger":
-                return "danger"
-            if z["color"] == "warning":
-                best = "warning"
-    return best
+            try:
+                z_code = int(z.get("code", z.get("severity_code",
+                             zone_code(z.get("zone", z.get("label", z.get("color", "yellow")))))))
+            except Exception:
+                z_code = zone_code(z.get("zone", z.get("label", z.get("color", "yellow"))))
+            if z_code > best_code:
+                best_code = z_code
+                best_id = z.get("id", "")
+    return best_code, zone_name_from_code(best_code), best_id
 
 def cam_to_machine(x_c, z_c):
     # Camera frame: x_c = right, z_c = forward, origin at lens.
@@ -205,9 +251,9 @@ while True:
     tracklets = msg.tracklets
 
     detections = []
-    danger_count = 0
-    warning_count = 0
-    clear_count = 0
+    red_count = 0
+    yellow_count = 0
+    outside_count = 0
     closest = None
     raw_count = 0
 
@@ -230,7 +276,7 @@ while True:
         x_c = float(sc.x) / 1000.0
         z_c = float(sc.z) / 1000.0
         mx, my = cam_to_machine(x_c, z_c)
-        zone = classify(mx, my)
+        z_code, z_name, z_id = classify(mx, my)
         # Range from camera (for closest_m / UI bar) — machine-frame dist
         # is less useful when multiple cameras have different origins.
         cam_dist = math.sqrt(x_c * x_c + z_c * z_c)
@@ -245,14 +291,16 @@ while True:
             "x_m":        round(mx, 2),
             "y_m":        round(my, 2),
             "distance_m": round(cam_dist, 2),
-            "zone":       zone,
+            "zone_code":   z_code,
+            "zone":        z_name,
+            "zone_id":     z_id,
         })
-        if zone == "danger":
-            danger_count = danger_count + 1
-        elif zone == "warning":
-            warning_count = warning_count + 1
+        if z_code == ZONE_RED:
+            red_count = red_count + 1
+        elif z_code == ZONE_YELLOW:
+            yellow_count = yellow_count + 1
         else:
-            clear_count = clear_count + 1
+            outside_count = outside_count + 1
         if closest is None or cam_dist < closest:
             closest = cam_dist
 
@@ -267,14 +315,28 @@ while True:
             continue
     state["last_send"] = now
 
+    if len(detections) == 0:
+        scene_state_code = ZONE_NONE
+    elif red_count > 0:
+        scene_state_code = ZONE_RED
+    elif yellow_count > 0:
+        scene_state_code = ZONE_YELLOW
+    else:
+        scene_state_code = ZONE_OUTSIDE
+
     payload = {
+        "schema_version": 1,
         "type":      "detections",
         "camera_id": CAMERA_ID,
+        "scene_state_code": scene_state_code,
+        "scene_state": zone_name_from_code(scene_state_code),
         "detections": detections,
         "summary": {
-            "danger_count":  danger_count,
-            "warning_count": warning_count,
-            "clear_count":   clear_count,
+            "detection_count": len(detections),
+            "outside_count": outside_count,
+            "yellow_count": yellow_count,
+            "red_count": red_count,
+            "highest_zone_code": scene_state_code,
             "closest_m":     None if closest is None else round(closest, 2),
             "raw_count":     raw_count,
         },

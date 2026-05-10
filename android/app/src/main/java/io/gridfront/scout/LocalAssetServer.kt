@@ -496,7 +496,7 @@ class LocalAssetServer(
     }
 
     private fun emptySpatialPayload(): String =
-        """{"detections":[],"summary":{"danger_count":0,"warning_count":0,"clear_count":0,"closest_m":null},"units":"m","link":"stale","ts":null}"""
+        """{"schema_version":1,"type":"detections","scene_state_code":0,"scene_state":"none","detections":[],"summary":{"detection_count":0,"outside_count":0,"yellow_count":0,"red_count":0,"highest_zone_code":0,"closest_m":null},"units":"m","link":"stale","ts":null}"""
 
     private fun drainHeaders(reader: BufferedReader) {
         var line = reader.readLine()

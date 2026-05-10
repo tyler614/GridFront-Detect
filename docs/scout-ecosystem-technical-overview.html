@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Gridfront Scout Ecosystem Technical Overview</title>
+  <style>
+    @page {
+      size: Letter;
+      margin: 0.58in;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #172033;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.46;
+      background: #ffffff;
+    }
+    .page {
+      min-height: auto;
+      padding: 0.05in 0;
+      page-break-after: always;
+    }
+    .page:last-child { page-break-after: auto; }
+    .cover {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 9.35in;
+      background: #ffffff;
+      border: 1px solid #d9e2ef;
+      border-radius: 14px;
+      padding: 0.45in;
+    }
+    .logo { width: 190px; height: auto; }
+    h1 {
+      margin: 1.0in 0 0.18in;
+      font-size: 34pt;
+      line-height: 1.05;
+      letter-spacing: 0;
+      color: #0d1728;
+      font-weight: 760;
+    }
+    h2 {
+      margin: 0 0 0.2in;
+      color: #0d1728;
+      font-size: 19pt;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    h3 {
+      margin: 0.18in 0 0.08in;
+      color: #0d1728;
+      font-size: 12.5pt;
+    }
+    p { margin: 0 0 0.12in; }
+    .subtitle {
+      max-width: 6.7in;
+      color: #43526a;
+      font-size: 14pt;
+      line-height: 1.45;
+    }
+    .meta {
+      color: #5a6880;
+      font-size: 10pt;
+    }
+    .section {
+      background: #ffffff;
+      border: 1px solid #dce5f1;
+      border-radius: 12px;
+      padding: 0.28in;
+      margin-bottom: 0.18in;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.15in;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.12in;
+    }
+    .card {
+      border: 1px solid #dce5f1;
+      border-radius: 10px;
+      padding: 0.14in;
+      background: #fbfdff;
+    }
+    .card h3:first-of-type { margin-top: 0; }
+    .label {
+      display: none;
+      padding: 0.03in 0.08in;
+      border-radius: 999px;
+      background: #e9f2ff;
+      color: #205995;
+      font-weight: 700;
+      font-size: 8.5pt;
+      text-transform: uppercase;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 0.26in 1fr 0.26in 1fr;
+      align-items: stretch;
+      gap: 0.08in;
+      margin-top: 0.12in;
+    }
+    .flow .node {
+      border: 1px solid #cbd8e8;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 0.16in;
+      min-height: 0.85in;
+    }
+    .arrow {
+      align-self: center;
+      text-align: center;
+      color: #54718f;
+      font-weight: 800;
+      font-size: 15pt;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.08in 0 0.04in;
+      font-size: 9.4pt;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    th, td {
+      border: 1px solid #dce5f1;
+      padding: 0.07in 0.08in;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: #edf4fb;
+      color: #24364d;
+    }
+    code, pre {
+      font-family: "Cascadia Mono", Consolas, monospace;
+    }
+    pre {
+      margin: 0.08in 0 0;
+      padding: 0.13in;
+      border-radius: 9px;
+      background: #101827;
+      color: #eaf2ff;
+      font-size: 7.8pt;
+      line-height: 1.32;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .note {
+      border-left: 4px solid #2f80ed;
+      padding: 0.08in 0.12in;
+      background: #f1f7ff;
+      color: #2d3f58;
+      border-radius: 8px;
+    }
+    .red { color: #c62525; font-weight: 750; }
+    .yellow { color: #9c6510; font-weight: 750; }
+    .outside { color: #315c83; font-weight: 750; }
+    .small { font-size: 9.2pt; color: #4d5e75; }
+  </style>
+</head>
+<body>
+  <section class="page cover">
+    <div>
+      <img class="logo" src="file:///G:/Shared%20drives/GridFront%20Internal/Branding/Gridfront_Logo.png" alt="Gridfront logo">
+      <h1>Scout Ecosystem<br>Technical Overview</h1>
+      <p class="subtitle">
+        How Scout uses OAK-D stereo spatial detection, an Android tablet, and
+        local JSON messages to detect people around heavy equipment.
+      </p>
+    </div>
+    <div class="meta">
+      <p><strong>Version:</strong> Scout v0.1.0, schema 1.</p>
+      <p><strong>Updated:</strong> May 10, 2026.</p>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section">
+      <h2>What Scout Is</h2>
+      <p>
+        Scout is GridFront's mounted spatial detection ecosystem for mobile
+        plant: excavators, wheel loaders, dozers, dump trucks, graders, and
+        similar heavy equipment. It uses OAK-D stereo cameras to detect people,
+        measure where they are in machine-relative space, classify the active
+        zone, and present that state to the operator on a tablet.
+      </p>
+      <p>
+        The product category aligns with human-form recognition camera systems
+        used in construction safety: multi-camera coverage, configurable inner
+        and outer detection zones, visual/audible operator alerts, and system
+        health awareness. Scout's implementation goes deeper by keeping
+        spatial perception on the OAK-D and using the tablet as the local setup,
+        display, and orchestration surface.
+      </p>
+      <div class="flow">
+        <div class="node">
+          <span class="label">OAK-D</span>
+          <h3>Perception</h3>
+          <p>Runs the flashed standalone pipeline, tracks objects, transforms detections into the machine frame, and classifies each detection so every downstream surface sees the same safety state.</p>
+        </div>
+        <div class="arrow">&rarr;</div>
+        <div class="node">
+          <span class="label">Tablet</span>
+          <h3>Local Runtime</h3>
+          <p>Receives UDP packets, keeps the freshest state, serves the local API, and owns setup for machine, camera, zone, model, and runtime settings.</p>
+        </div>
+        <div class="arrow">&rarr;</div>
+        <div class="node">
+          <span class="label">UI</span>
+          <h3>Operator Surface</h3>
+          <p>Renders radar, status, alarms, settings, and camera health from the tablet's local HTTP/SSE API without needing a cloud round trip.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>State Codes</h2>
+      <p>
+        Scout uses numeric state codes for decisions and simple text labels for
+        readability. The code is the decision value: higher numbers mean higher
+        urgency, so displays and alert logic can compare <code>3 &gt; 2 &gt; 1 &gt; 0</code>
+        without parsing words. The string label stays beside the code so logs,
+        demos, and support conversations remain readable.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Code</th><th>Scene meaning</th><th>Per-detection meaning</th><th>UI behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>0</strong></td><td>No detections</td><td>Not used on a detection object</td><td>No detection state</td></tr>
+          <tr><td><strong>1</strong></td><td>Detection exists, outside zones</td><td>Detection outside configured zones</td><td>Track object, no alert</td></tr>
+          <tr><td><strong>2</strong></td><td>At least one yellow-zone detection</td><td>Detection in yellow zone</td><td>Yellow visual state and chime</td></tr>
+          <tr><td><strong>3</strong></td><td>At least one red-zone detection</td><td>Detection in red zone</td><td>Red visual state and repeating alarm</td></tr>
+        </tbody>
+      </table>
+      <p class="note">
+        Code 0 belongs to the scene, not to an individual detection. No
+        detections means the array is empty. A detection object starts at code 1
+        because the object exists, even when it is outside the configured zones.
+      </p>
+    </div>
+
+    <div class="section">
+      <h2>Channels</h2>
+      <table>
+        <thead>
+          <tr><th>Channel</th><th>Direction</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>5556/UDP</code></td><td>OAK-D to tablet</td><td>Live detection packets.</td></tr>
+          <tr><td><code>5557/UDP</code></td><td>OAK-D both ways with tablet</td><td>Camera config request and tablet config push.</td></tr>
+          <tr><td><code>127.0.0.1:8080</code></td><td>WebView to tablet app</td><td>Local app, local API, and live SSE stream.</td></tr>
+          <tr><td>Display UDP</td><td>Optional backend to cab displays</td><td>Trimmed latest-state packets for display firmware.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <h2>Multi-Camera Operation</h2>
+      <p>
+        The Scout contract is designed so one tablet can build a single safety
+        view from multiple OAK-D cameras. The target architecture supports up
+        to six cameras streaming to the same tablet and appearing together in
+        one operator UI.
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>How cameras stay separate</h3>
+          <p>Each OAK-D has its own <code>camera_id</code>, pose, IP address, and config entry. Every detection packet includes that <code>camera_id</code>.</p>
+        </div>
+        <div class="card">
+          <h3>How the UI becomes one view</h3>
+          <p>The tablet receives packets on the same UDP channel, keeps the freshest packet per camera, and the WebView merges them into one radar, count, closest-distance readout, and scene state.</p>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Aggregate field</th><th>Multi-camera behavior</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>scene_state_code</code></td><td>The UI uses the highest active code across all cameras. Red on any camera makes the scene red.</td></tr>
+          <tr><td><code>detection_count</code></td><td>Counts detections from all active cameras after packets are merged.</td></tr>
+          <tr><td><code>closest_m</code></td><td>Uses the closest detection reported by any camera.</td></tr>
+          <tr><td><code>zone_code</code></td><td>Stays attached to each detection, so individual dots can still be colored correctly.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section">
+      <h2>Detection Packet</h2>
+      <p>
+        The detection packet is the main live message. It describes what the
+        camera sees now, not an event ledger. If a UDP packet is lost, the next
+        packet replaces it; if the link goes stale, the UI should clear or show
+        an offline state rather than replay old detections.
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Sent by</h3>
+          <p>OAK-D standalone pipeline</p>
+          <h3>Received by</h3>
+          <p>Android tablet UDP listener</p>
+          <h3>Transport</h3>
+          <p><code>UDP :5556</code></p>
+        </div>
+        <div class="card">
+          <h3>Important fields</h3>
+          <p><code>scene_state_code</code> drives overall UI state.</p>
+          <p><code>zone_code</code> drives each detection's display color and alarm behavior.</p>
+          <p><code>x_m</code> and <code>y_m</code> are machine-frame meters.</p>
+        </div>
+      </div>
+      <pre>{
+  "schema_version": 1,
+  "type": "detections",
+  "camera_id": "cam-0",
+  "scene_state_code": 3,
+  "scene_state": "red",
+  "detections": [
+    {
+      "track_id": 12,
+      "label": "person",
+      "x_m": 0.72,
+      "y_m": 5.18,
+      "distance_m": 4.2,
+      "zone_code": 3,
+      "zone": "red",
+      "zone_id": "red-inner"
+    }
+  ],
+  "summary": {
+    "detection_count": 1,
+    "outside_count": 0,
+    "yellow_count": 0,
+    "red_count": 1,
+    "highest_zone_code": 3,
+    "closest_m": 4.2,
+    "raw_count": 1
+  },
+  "units": "m",
+  "link": "ok",
+  "ts": 1778371200.123
+}</pre>
+    </div>
+
+    <div class="section">
+      <h2>No-Detection Packet</h2>
+      <p>
+        No detections are represented by an empty <code>detections</code> array
+        and <code>scene_state_code: 0</code>. This is different from a detection
+        that exists outside the monitored zones, which uses code 1.
+      </p>
+      <pre>{
+  "schema_version": 1,
+  "type": "detections",
+  "camera_id": "cam-0",
+  "scene_state_code": 0,
+  "scene_state": "none",
+  "detections": [],
+  "summary": {
+    "detection_count": 0,
+    "outside_count": 0,
+    "yellow_count": 0,
+    "red_count": 0,
+    "highest_zone_code": 0,
+    "closest_m": null
+  },
+  "units": "m",
+  "link": "ok",
+  "ts": 1778371200.123
+}</pre>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section">
+      <h2>Config Sync</h2>
+      <p>
+        The tablet owns the active machine/camera/zone configuration. The OAK-D
+        asks for config on boot and every 30 seconds, and the tablet also pushes
+        config immediately after camera-facing edits. This keeps setup
+        centralized on the operator tablet while letting each camera run its
+        perception pipeline independently.
+      </p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Request from camera</h3>
+          <pre>{
+  "type": "config_request",
+  "camera_id": "cam-0"
+}</pre>
+        </div>
+        <div class="card">
+          <h3>Response from tablet</h3>
+          <pre>{
+  "type": "config",
+  "camera_id": "cam-0",
+  "pose": {
+    "x_m": 0.0,
+    "y_m": 4.0,
+    "yaw_deg": 0.0
+  },
+  "zones": [
+    {
+      "id": "red-inner",
+      "label": "red",
+      "severity_code": 3,
+      "r_m": 3.5
+    },
+    {
+      "id": "yellow-outer",
+      "label": "yellow",
+      "severity_code": 2,
+      "r_m": 6.0
+    }
+  ],
+  "machine_footprint_m": {
+    "length": 8.0,
+    "width": 2.5
+  },
+  "target_fps": 10.0
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Tablet Local API</h2>
+      <p>
+        The WebView reads from the tablet over localhost. This keeps the UI fast
+        and lets Scout run without an external server.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Endpoint</th><th>Purpose</th><th>Pushes camera config?</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>GET /api/spatial</code></td><td>Latest detection packet.</td><td>No</td></tr>
+          <tr><td><code>GET /api/spatial/stream</code></td><td>Live SSE stream of detection packets.</td><td>No</td></tr>
+          <tr><td><code>GET /api/config</code></td><td>Full tablet-owned config.</td><td>No</td></tr>
+          <tr><td><code>POST /api/config</code></td><td>Replace full config.</td><td>Yes, all cameras</td></tr>
+          <tr><td><code>POST /api/zones</code></td><td>Replace red/yellow zone distances.</td><td>Yes, all cameras</td></tr>
+          <tr><td><code>POST /api/cameras/{id}/pose</code></td><td>Update one camera mount pose.</td><td>Yes, that camera</td></tr>
+          <tr><td><code>POST /api/runtime</code></td><td>Update runtime settings such as <code>target_fps</code>.</td><td>Yes, when FPS changes</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="section">
+      <h2>How Product Should Think About It</h2>
+      <div class="grid-3">
+        <div class="card">
+          <span class="label">Latest state</span>
+          <h3>Not an event ledger</h3>
+          <p>Detection packets describe what Scout sees now. Lost packets are replaced by the next packet, and stale links should clear the scene.</p>
+        </div>
+        <div class="card">
+          <span class="label">Camera-owned</span>
+          <h3>Safety classification</h3>
+          <p>The OAK-D classifies detections before the tablet displays them. The UI presents one consistent camera-authored safety state.</p>
+        </div>
+        <div class="card">
+          <span class="label">Tablet-owned</span>
+          <h3>Setup truth</h3>
+          <p>The tablet stores machine, camera, zone, model, and runtime config, then pushes the camera-facing subset.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Integration Rules</h2>
+      <table>
+        <thead>
+          <tr><th>Rule</th><th>Why it matters</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Use <code>scene_state_code</code> for the overall UI/display state.</td><td>It gives one unambiguous decision value for red, yellow, outside, or none.</td></tr>
+          <tr><td>Use <code>zone_code</code> for individual detections.</td><td>It lets displays color each dot without parsing text.</td></tr>
+          <tr><td>Treat <code>detections: []</code> as no detections.</td><td>Do not infer no detections from a per-detection value.</td></tr>
+          <tr><td>Keep strings for readability, not decisions.</td><td>Strings help logs and demos, but numbers prevent casing and wording bugs.</td></tr>
+          <tr><td>Honor <code>link: "stale"</code>.</td><td>Stale data should clear or show offline state rather than freeze old detections.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+</body>
+</html>

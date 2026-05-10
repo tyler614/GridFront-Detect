@@ -33,12 +33,19 @@ MAX_PACKET_BYTES = 1400       # stay under WiFi MTU (1500) minus UDP/IP header
 # How old the pipeline state can be before we mark the link "stale" in the
 # packet. The cab display flips to a CAMERA OFFLINE screen instead of
 # rendering frozen detections — operators must know the system can no
-# longer see, not stare at a 47-minute-old DANGER reading.
+# longer see, not stare at a stale red-zone reading.
 STATE_STALE_AFTER_S = 3.0
 
 # Fields the firmware reads — anything else is stripped before send.
-_DETECTION_KEYS = ("track_id", "x_m", "z_m", "distance_m", "zone")
-_SUMMARY_KEYS = ("danger_count", "warning_count", "clear_count", "closest_m")
+_DETECTION_KEYS = (
+    "track_id", "label", "camera_id",
+    "x_m", "y_m", "z_m", "distance_m",
+    "zone_code", "zone", "zone_id",
+)
+_SUMMARY_KEYS = (
+    "detection_count", "outside_count", "yellow_count", "red_count",
+    "highest_zone_code", "closest_m",
+)
 
 # Operator-facing display unit. The webview's settings page writes this via
 # /api/units; every broadcast includes it so cab displays stay in sync with
@@ -158,8 +165,18 @@ class DisplayBroadcaster:
         # has tempting data to render even if it ignores `link`.
         if link != "ok":
             return json.dumps({
+                "schema_version": 1,
+                "scene_state_code": 0,
+                "scene_state": "none",
                 "detections": [],
-                "summary": {k: 0 if k.endswith("_count") else None for k in _SUMMARY_KEYS},
+                "summary": {
+                    "detection_count": 0,
+                    "outside_count": 0,
+                    "yellow_count": 0,
+                    "red_count": 0,
+                    "highest_zone_code": 0,
+                    "closest_m": None,
+                },
                 "units": self._units,
                 "link": link,
                 "ts": ts,
@@ -175,6 +192,9 @@ class DisplayBroadcaster:
         summary_src = state.get("summary") or {}
         summary = {k: summary_src.get(k) for k in _SUMMARY_KEYS}
         return json.dumps({
+            "schema_version": 1,
+            "scene_state_code": state.get("scene_state_code", summary.get("highest_zone_code", 0)),
+            "scene_state": state.get("scene_state", "none"),
             "detections": detections,
             "summary": summary,
             "units": self._units,

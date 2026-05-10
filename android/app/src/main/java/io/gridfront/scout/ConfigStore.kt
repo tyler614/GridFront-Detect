@@ -26,8 +26,8 @@ import java.io.File
  *      "hfov_deg": 127.0, "max_range_m": 12.0}
  *   ],
  *   "zones": [
- *     {"id": "z-1", "color": "danger",  "cx_m": 0.0, "cy_m": 0.0, "r_m": 3.5},
- *     {"id": "z-2", "color": "warning", "cx_m": 0.0, "cy_m": 0.0, "r_m": 6.0}
+ *     {"id": "red-inner",    "label": "red",    "severity_code": 3, "cx_m": 0.0, "cy_m": 0.0, "r_m": 3.5},
+ *     {"id": "yellow-outer", "label": "yellow", "severity_code": 2, "cx_m": 0.0, "cy_m": 0.0, "r_m": 6.0}
  *   ]
  * }
  * ```
@@ -132,14 +132,39 @@ class ConfigStore(context: Context) {
         val out = JSONArray()
         for (i in 0 until raw.length()) {
             val z = raw.optJSONObject(i) ?: continue
+            val label = zoneLabel(z)
+            val severity = z.optInt("severity_code", defaultSeverity(label)).coerceIn(1, 3)
             out.put(JSONObject().apply {
-                put("color", z.optString("color", "warning"))
+                put("id", z.optString("id", ""))
+                put("label", label)
+                put("zone", label)
+                put("color", label)
+                put("display_color", z.optString("display_color", label))
+                put("severity_code", severity)
                 put("cx_m", z.optDouble("cx_m", 0.0))
                 put("cy_m", z.optDouble("cy_m", 0.0))
                 put("r_m",  z.optDouble("r_m",  0.0))
             })
         }
         return out
+    }
+
+    private fun zoneLabel(z: JSONObject): String {
+        val raw = z.optString("label",
+            z.optString("zone",
+                z.optString("color", "yellow"))).lowercase()
+        return when (raw) {
+            "danger", "red" -> "red"
+            "warning", "yellow" -> "yellow"
+            "clear", "outside" -> "outside"
+            else -> "yellow"
+        }
+    }
+
+    private fun defaultSeverity(label: String): Int = when (label) {
+        "red" -> 3
+        "yellow" -> 2
+        else -> 1
     }
 
     private fun defaultConfig(): JSONObject = JSONObject().apply {
@@ -155,13 +180,21 @@ class ConfigStore(context: Context) {
         put("installed_cameras", JSONArray())
         put("zones", JSONArray().apply {
             put(JSONObject().apply {
-                put("id",    "z-1")
-                put("color", "danger")
+                put("id",    "red-inner")
+                put("label", "red")
+                put("zone",  "red")
+                put("color", "red")
+                put("display_color", "red")
+                put("severity_code", 3)
                 put("cx_m",  0.0); put("cy_m", 0.0); put("r_m", 3.5)
             })
             put(JSONObject().apply {
-                put("id",    "z-2")
-                put("color", "warning")
+                put("id",    "yellow-outer")
+                put("label", "yellow")
+                put("zone",  "yellow")
+                put("color", "yellow")
+                put("display_color", "yellow")
+                put("severity_code", 2)
                 put("cx_m",  0.0); put("cy_m", 0.0); put("r_m", 6.0)
             })
         })
