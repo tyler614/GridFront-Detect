@@ -64,3 +64,6 @@ training/merged/
 
 # Ad-hoc debug screenshots
 tablet_screenshot.png
+
+# Lives in its own repo now: github.com/GridFront-Inc/scout
+esp32-p4-display/
