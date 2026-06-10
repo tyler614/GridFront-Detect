@@ -1,35 +1,47 @@
 {
- "pending": [
-  {
-   "title": "Cab display demo now mirrors the production P4 round display",
-   "kind": "minor",
-   "description": "The web demo cab-display panel is a 1:1 visual twin of the new ESP32-P4 firmware radar: solid scene-state washes (navy, gold, red \u2014 never pulsing), per-camera field-of-view cones with nested danger and warning bands, knocked-out operator badges, and the GridFront Scout idle wordmark on a clear scene.",
-   "items": [
-    "Cab display uses the exact locked scene palette from the P4 firmware, so what visitors see online matches the panel in the cab.",
-    "Camera FOV cones render from the live coverage config; zone bands recolor with the scene state.",
-    "New Simulate person button walks a synthetic person through a real camera FOV \u2014 through warning into danger and back \u2014 and works with or without a camera attached.",
-    "People render as the production operator badges; a clear scene shows GridFront Scout / System Active."
-   ]
-  }
- ],
- "releases": [
-  {
-   "version": "0.1.0",
-   "date": "2026-05-10",
-   "notes": [
+  "pending": [
     {
-     "title": "GridFront Scout version 0 baseline",
-     "kind": "minor",
-     "description": "This is the first tracked version of the OAK standalone tablet app: the tablet owns setup and display, while the OAK-D camera runs perception and sends live proximity detections.",
-     "items": [
-      "The Oukitel tablet runs a locked-down GridFront Scout kiosk with a live cab radar and field-service settings.",
-      "The OAK-D standalone pipeline performs detection, depth, tracking, coordinate transform, and zone classification on the camera.",
-      "Tablet and camera communicate over the direct USB-C Ethernet link using UDP detection packets on 5556 and config sync on 5557.",
-      "Detection messages now use schema 1 with numeric scene and zone codes: 0 for no detections, 1 for outside-zone detections, 2 for yellow-zone detections, and 3 for red-zone detections.",
-      "The Scout ecosystem technical overview PDF documents the product architecture, live JSON payloads, config sync, and planned multi-camera behavior for up to six OAK-D cameras on one tablet."
-     ]
+      "title": "No user-visible changes pending",
+      "kind": "patch",
+      "description": "Placeholder for the next release. Authors of user-visible changes replace this entry with humanized notes before merging.",
+      "items": []
     }
-   ]
-  }
- ]
+  ],
+  "releases": [
+    {
+      "version": "0.2.0",
+      "date": "2026-06-10",
+      "notes": [
+        {
+          "title": "Cab display demo now mirrors the production P4 round display",
+          "kind": "minor",
+          "description": "The web demo cab-display panel is a 1:1 visual twin of the new ESP32-P4 firmware radar: solid scene-state washes (navy, gold, red — never pulsing), per-camera field-of-view cones with nested danger and warning bands, knocked-out operator badges, and the GridFront Scout idle wordmark on a clear scene.",
+          "items": [
+            "Cab display uses the exact locked scene palette from the P4 firmware, so what visitors see online matches the panel in the cab.",
+            "Camera FOV cones render from the live coverage config; zone bands recolor with the scene state.",
+            "New Simulate person button walks a synthetic person through a real camera FOV — through warning into danger and back — and works with or without a camera attached.",
+            "People render as the production operator badges; a clear scene shows GridFront Scout / System Active."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-05-10",
+      "notes": [
+        {
+          "title": "GridFront Scout version 0 baseline",
+          "kind": "minor",
+          "description": "This is the first tracked version of the OAK standalone tablet app: the tablet owns setup and display, while the OAK-D camera runs perception and sends live proximity detections.",
+          "items": [
+            "The Oukitel tablet runs a locked-down GridFront Scout kiosk with a live cab radar and field-service settings.",
+            "The OAK-D standalone pipeline performs detection, depth, tracking, coordinate transform, and zone classification on the camera.",
+            "Tablet and camera communicate over the direct USB-C Ethernet link using UDP detection packets on 5556 and config sync on 5557.",
+            "Detection messages now use schema 1 with numeric scene and zone codes: 0 for no detections, 1 for outside-zone detections, 2 for yellow-zone detections, and 3 for red-zone detections.",
+            "The Scout ecosystem technical overview PDF documents the product architecture, live JSON payloads, config sync, and planned multi-camera behavior for up to six OAK-D cameras on one tablet."
+          ]
+        }
+      ]
+    }
+  ]
 }
