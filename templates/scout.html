@@ -173,24 +173,32 @@
         background: #000;
         z-index: 1;
     }
-    /* Cab background pulse — applied to #cab-bg-disc by JS when a tracked
-       person is inside a danger or warning zone. Danger pulses faster and
-       harder; warning is calmer so the contrast still tells the operator
-       which one they're looking at. SVG fill animates via CSS. */
-    @keyframes cab-pulse-danger {
-        0%, 100% { fill: #7f1d1d; }
-        50%      { fill: #ef4444; }
+    /* Alarm presentation matches the P4 firmware (specs/ui_redesign.md):
+       the disc is a SOLID wash recoloured on a real scene-state transition —
+       never a pulse. JS swaps #cab-wash's fill directly from the locked
+       SCENE_PAL palette; no CSS animation is involved. */
+    #cab-wordmark { transition: opacity 0.3s ease; }
+    .cab-state-chip {
+        position: absolute; top: 34px; left: 0; right: 0;
+        text-align: center; font-size: 11px; font-weight: 700;
+        letter-spacing: 1.5px; text-transform: uppercase;
+        color: #8AA0B2; pointer-events: none; z-index: 2;
     }
-    @keyframes cab-pulse-warn {
-        0%, 100% { fill: #78350f; }
-        50%      { fill: #f59e0b; }
+    .cab-state-chip.s2 { color: #F8D24B; }
+    .cab-state-chip.s3 { color: #EA3323; }
+    .cab-state-chip.s0 { color: #41E32C; }
+    .cab-controls {
+        position: absolute; bottom: 12px; left: 0; right: 0;
+        display: flex; justify-content: center; gap: 8px; z-index: 4;
     }
-    #cab-bg-disc.cab-bg-danger {
-        animation: cab-pulse-danger 0.7s ease-in-out infinite;
+    .cab-sim-btn {
+        background: #141B22; color: #F2F6F8;
+        border: 1px solid #2a3540; border-radius: 6px;
+        padding: 6px 14px; font-size: 11px; font-weight: 600;
+        letter-spacing: 0.5px; cursor: pointer;
     }
-    #cab-bg-disc.cab-bg-warn {
-        animation: cab-pulse-warn 1.2s ease-in-out infinite;
-    }
+    .cab-sim-btn:hover { background: #1b2530; border-color: #44A5D6; }
+    .cab-sim-btn.active { background: #44A5D6; border-color: #44A5D6; color: #06121c; }
     .cab-spec-label {
         position: absolute; bottom: 14px; left: 0; right: 0;
         text-align: center; font-size: 10px; color: #555;
@@ -1081,50 +1089,54 @@
             </div>
         </div>
         <div class="cab-panel" id="cab-panel">
-            <div class="panel-label">CAB DISPLAY · 1.8" AMOLED</div>
+            <div class="panel-label">CAB DISPLAY · ESP32-P4 3.4&Prime; ROUND</div>
+            <div class="cab-state-chip s0" id="cab-state-chip">System Active</div>
             <div class="cab-display-frame">
+                <!-- 1:1 visual twin of the P4 firmware radar (esp32-p4-display/main/radar_view.c).
+                     Same locked SCENE_PAL palette, solid alarm wash (never pulses), per-camera
+                     FOV cones with nested danger/warning bands, knocked-out operator badges,
+                     idle wordmark. viewBox 200x200 stands in for the 800x800 panel (scale /4). -->
                 <svg class="cab-display-svg" id="cab-display" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
                     <defs>
-                        <radialGradient id="cab-safe-fill" cx="50%" cy="50%" r="50%">
-                            <stop offset="0%"  stop-color="#0b1f12" stop-opacity="0"/>
-                            <stop offset="85%" stop-color="#0b1f12" stop-opacity="0.4"/>
-                            <stop offset="100%" stop-color="#0b1f12" stop-opacity="0.7"/>
-                        </radialGradient>
-                        <filter id="cab-glow" x="-50%" y="-50%" width="200%" height="200%">
-                            <feGaussianBlur stdDeviation="2.5" result="blur"/>
-                            <feMerge>
-                                <feMergeNode in="blur"/>
-                                <feMergeNode in="SourceGraphic"/>
-                            </feMerge>
+                        <clipPath id="cab-disc-clip">
+                            <circle cx="100" cy="100" r="95"/>
+                        </clipPath>
+                        <!-- Operator badge: pure black disc with the figure KNOCKED OUT so the
+                             wash colour shows through the silhouette (firmware person_mask.h). -->
+                        <mask id="cab-badge-mask" maskUnits="userSpaceOnUse" x="-8" y="-8" width="16" height="16">
+                            <circle cx="0" cy="0" r="6.6" fill="#fff"/>
+                            <circle cx="0" cy="-2.5" r="1.7" fill="#000"/>
+                            <path d="M -2.5 4.4 v -2.2 a 2.5 2.5 0 0 1 5 0 v 2.2 z" fill="#000"/>
+                        </mask>
+                        <filter id="cab-badge-shadow" x="-60%" y="-60%" width="220%" height="220%">
+                            <feDropShadow dx="0" dy="0.8" stdDeviation="1.1" flood-color="#000" flood-opacity="0.55"/>
                         </filter>
                     </defs>
 
-                    <!-- Black background disc — flips bright red when a
-                         person enters any danger zone. -->
-                    <circle id="cab-bg-disc" cx="100" cy="100" r="95" fill="#050505"/>
+                    <!-- Solid alarm wash — the colour IS the alarm level. -->
+                    <circle id="cab-wash" cx="100" cy="100" r="95" fill="#10141B"/>
 
-                    <!-- Single neutral outer ring — represents 20 m radius. -->
-                    <circle cx="100" cy="100" r="95" fill="none" stroke="#3a3a3a" stroke-width="1.5"/>
+                    <!-- Camera FOV cones + nested zone bands; repainted only when
+                         coverage config or the scene state changes. -->
+                    <g id="cab-fov" clip-path="url(#cab-disc-clip)"></g>
 
-                    <!-- Cardinal tick marks -->
-                    <g stroke="#444" stroke-width="1">
-                        <line x1="100" y1="5"  x2="100" y2="12"/>
-                        <line x1="100" y1="188" x2="100" y2="195"/>
-                        <line x1="5"   y1="100" x2="12"  y2="100"/>
-                        <line x1="188" y1="100" x2="195" y2="100"/>
+                    <!-- Machine box — to-scale, slate on every wash. -->
+                    <g id="cab-machine"></g>
+
+                    <!-- Live detections (operator badges) — populated by updateCabDisplay(). -->
+                    <g id="cab-detections" clip-path="url(#cab-disc-clip)"></g>
+
+                    <!-- Idle wordmark — visible only on a fully clear scene. -->
+                    <g id="cab-wordmark" opacity="1">
+                        <text x="100" y="156" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                              font-size="8" font-weight="300" fill="#FFFFFF">GridFront Scout&#8482;</text>
+                        <text x="100" y="167" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
+                              font-size="8" font-weight="600" fill="#41E32C">System Active</text>
                     </g>
-
-                    <!-- Machine silhouette (top-down) in the middle -->
-                    <g id="cab-machine">
-                        <rect x="88" y="82" width="24" height="36" rx="3" fill="#333" stroke="#666" stroke-width="1"/>
-                        <rect x="92" y="88" width="16" height="12" rx="1" fill="#1a1a1a" stroke="#555" stroke-width="0.5"/>
-                        <!-- Front indicator chevron — small marker just above the chassis -->
-                        <polygon points="100,78 97,82 103,82" fill="#60a5fa" opacity="0.7"/>
-                    </g>
-
-                    <!-- Live detections — populated by updateCabDisplay() from SSE. -->
-                    <g id="cab-detections"></g>
                 </svg>
+            </div>
+            <div class="cab-controls">
+                <button type="button" class="cab-sim-btn" id="cab-sim-btn" onclick="cabSimToggle()">&#9654; Simulate person</button>
             </div>
         </div>
       </div><!-- /.panels-top -->
@@ -3705,27 +3717,47 @@ fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
     }
 });
 
-// ── Cab display widget — round 1.8" AMOLED preview ────────
-// Single neutral ring at 20 m radius (40 m diameter visible field).
-// No zone shading — flicker-free. Detection dots are persistent SVG
-// nodes keyed by track_id; we update attributes in-place rather than
-// rebuilding every SSE message, which is what was making the dots
-// blink even when the server-side track was steady.
+// ── Cab display widget — P4 round-display twin ────────────
+// Visual twin of the production firmware radar (esp32-p4-display/main/
+// radar_view.c + specs/ui_redesign.md). Same rules: the disc is a SOLID
+// alarm wash recoloured only on a scene-state transition; each configured
+// camera projects its FOV cone with nested danger/warning bands; people
+// are operator badges (figure knocked out of a black disc so the wash
+// shows through); a clear scene shows the idle wordmark. Detection
+// badges are persistent SVG nodes keyed by track_id, updated in-place.
 var CAB_VIEW_PX = 95;          // SVG units from centre to outermost edge
 var CAB_CENTER = 100;          // SVG center in viewBox 0..200
-var CAB_RANGE_M = 12;          // Outer ring radius in metres
+var CAB_RANGE_M = 12;          // Disc radius in metres (tracks zones.max_range_m)
 var CAB_LERP = 0.35;           // Render-time lerp toward latest SSE target
-var CAB_DOT_TTL_MS = 1200;     // How long a dot persists after its last update
+var CAB_DOT_TTL_MS = 1200;     // How long a badge persists after its last update
+var CAB_SAFE_INSET = 6.6;      // Keep badge centres this far inside the rim (fw SAFE_INSET/4)
+var CAB_BAND_GAP = 1.5;        // Gap between danger and warning bands (fw 6px @ 800px)
+
+// Scene palette — EXACT hexes from the firmware's SCENE_PAL (sampled from
+// James's XD mocks; LOCKED — the demo must match the panel pixel-for-pixel).
+// Indexed by scene_state_code: 0 none, 1 people-in-distance, 2 yellow, 3 red.
+var CAB_SCENE_PAL = [
+    { bg: '#10141B', coneFar: '#191F29', coneNear: '#191F29' },
+    { bg: '#10141B', coneFar: '#232621', coneNear: '#36111C' },
+    { bg: '#F8D24B', coneFar: '#E7C74F', coneNear: '#EA3323' },
+    { bg: '#EA3323', coneFar: '#CD2D20', coneNear: '#CD2D20' }
+];
+var CAB_STATE_LABELS = ['System Active', 'People in Distance', 'Warning', 'Danger'];
+var cabSceneState = -1;        // forces the first transition to paint
 
 // Persistent state per track_id
-var cabDots = {};              // tid -> { x, z, lastSeen, nodes:{glow,ring,core} }
+var cabDots = {};              // tid -> { x, z, lastSeen, nodes:{grp} }
 
 // Flat lists of zone shapes in machine-frame metres, refreshed by
-// reloadCabDangerZones(). updateCabDisplay() uses these to pulse the
-// background and recolour any dot inside a zone. Danger always wins
-// when a person is inside both (worst case rules the alert).
+// reloadCabDangerZones(). updateCabDisplay() uses these to derive the
+// scene state. Danger always wins when a person is inside both.
 var cabDangerShapes = [];
 var cabWarningShapes = [];
+
+// Camera coverage sectors (absolute bearings incl. yaw, from /api/coverage)
+// and machine footprint — both drive the static furniture layer.
+var cabCoverage = [];          // [{start_deg, end_deg, range_m}, ...]
+var cabMachine = { width_m: 2.5, length_m: 8.4 };
 
 function _cabPointInPolygon(x, z, pts) {
     var inside = false;
@@ -3795,54 +3827,131 @@ function reloadCabDangerZones() {
         cabDangerShapes = danger;
         cabWarningShapes = warning;
     }).catch(function() {});
+
+    // Coverage cones + machine footprint ride along on every zone reload so
+    // a settings save refreshes the whole furniture layer in one call.
+    fetch('/api/coverage').then(function(r) { return r.ok ? r.json() : { sectors: [] }; })
+        .then(function(cov) {
+            cabCoverage = (cov && cov.sectors) || [];
+            cabRedrawFurniture();
+        }).catch(function() {});
+    var machineType = (document.getElementById('set-machine-type') || {}).value || 'wheel_loader';
+    fetch('/api/machines/' + machineType).then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(m) {
+            if (m && m.dimensions) {
+                cabMachine.width_m  = m.dimensions.width_m  || cabMachine.width_m;
+                cabMachine.length_m = m.dimensions.length_m || cabMachine.length_m;
+                cabRedrawFurniture();
+            }
+        }).catch(function() {});
 }
 window.reloadCabDangerZones = reloadCabDangerZones;
 reloadCabDangerZones();
 
-// Cab dot colours per zone state. The bg-disc colour itself is driven
-// by CSS keyframes — JS only toggles the class so the pulse stays
-// silky-smooth even when SSE briefly hiccups.
-var CAB_DOT_DANGER = '#fecaca';
-var CAB_DOT_WARN   = '#fde68a';
-var CAB_DOT_SAFE   = '#7dd3fc';
+// ── Static furniture: FOV cones + machine box ─────────────
+// Mirrors the firmware contract: repainted only when the coverage config,
+// machine dims, or the scene state changes — never on the SSE hot path.
+
+// Annular-sector path. Bearings are degrees from machine-front (+z, up on
+// the display), clockwise positive — same convention as /api/coverage.
+function _cabSectorPath(r1, r2, a0deg, a1deg) {
+    var c = CAB_CENTER;
+    function pt(r, deg) {
+        var rad = (deg - 90) * Math.PI / 180;
+        return [(c + r * Math.cos(rad)).toFixed(2), (c + r * Math.sin(rad)).toFixed(2)];
+    }
+    var span = a1deg - a0deg;
+    var large = (span % 360 + 360) % 360 > 180 ? 1 : 0;
+    var p0 = pt(r2, a0deg), p1 = pt(r2, a1deg);
+    if (r1 <= 0.01) {
+        return 'M ' + c + ' ' + c + ' L ' + p0.join(' ') +
+               ' A ' + r2 + ' ' + r2 + ' 0 ' + large + ' 1 ' + p1.join(' ') + ' Z';
+    }
+    var q0 = pt(r1, a1deg), q1 = pt(r1, a0deg);
+    return 'M ' + p0.join(' ') +
+           ' A ' + r2 + ' ' + r2 + ' 0 ' + large + ' 1 ' + p1.join(' ') +
+           ' L ' + q0.join(' ') +
+           ' A ' + r1 + ' ' + r1 + ' 0 ' + large + ' 0 ' + q1.join(' ') + ' Z';
+}
+
+// Bench fallback: with zero cameras configured the demo still has to show
+// the design language, so we draw one forward cone (OAK-D Pro W ~108° HFOV
+// after undistort margin, clamped like the firmware does).
+var CAB_FALLBACK_SECTOR = { start_deg: -54, end_deg: 54, range_m: 12 };
+
+function cabRedrawFurniture() {
+    var fov = document.getElementById('cab-fov');
+    var mach = document.getElementById('cab-machine');
+    if (!fov || !mach) return;
+    var pal = CAB_SCENE_PAL[Math.max(0, cabSceneState)] || CAB_SCENE_PAL[0];
+    var scale = CAB_VIEW_PX / CAB_RANGE_M;
+    var sectors = cabCoverage.length ? cabCoverage : [CAB_FALLBACK_SECTOR];
+
+    var parts = [];
+    sectors.forEach(function(s) {
+        var reach = Math.min((s.range_m || CAB_RANGE_M), CAB_RANGE_M) * scale;
+        var dangerR = Math.min(DANGER * scale, reach);
+        var warnR = Math.min(WARNING * scale, reach);
+        var a0 = s.start_deg, a1 = s.end_deg;
+        if (a1 < a0) a1 += 360;
+        // Danger band: machine -> danger radius.
+        parts.push('<path d="' + _cabSectorPath(0, dangerR, a0, a1) + '" fill="' + pal.coneNear + '"/>');
+        // Warning band: gap -> warning radius. Beyond it the wash shows through.
+        if (warnR > dangerR + CAB_BAND_GAP) {
+            parts.push('<path d="' + _cabSectorPath(dangerR + CAB_BAND_GAP, warnR, a0, a1) + '" fill="' + pal.coneFar + '"/>');
+        }
+    });
+    fov.innerHTML = parts.join('');
+
+    // Machine box — to-scale rounded rect, slate on every wash (fw C_BOX_*).
+    var bw = Math.max(cabMachine.width_m * scale, 6);
+    var bl = Math.max(cabMachine.length_m * scale, 10);
+    mach.innerHTML = '<rect x="' + (CAB_CENTER - bw / 2).toFixed(1) + '" y="' + (CAB_CENTER - bl / 2).toFixed(1) +
+        '" width="' + bw.toFixed(1) + '" height="' + bl.toFixed(1) +
+        '" rx="2.5" fill="#262B34" stroke="#8893A0" stroke-width="1"/>';
+}
+
+// ── Scene-state transitions ───────────────────────────────
+// Solid wash recolour + cone repaint + chip — only on a real transition,
+// exactly like radar_view_update() on the panel.
+function cabSetSceneState(code) {
+    if (code === cabSceneState) return;
+    cabSceneState = code;
+    var pal = CAB_SCENE_PAL[code] || CAB_SCENE_PAL[0];
+    var wash = document.getElementById('cab-wash');
+    if (wash) wash.setAttribute('fill', pal.bg);
+    cabRedrawFurniture();
+    var chip = document.getElementById('cab-state-chip');
+    if (chip) {
+        chip.textContent = CAB_STATE_LABELS[code];
+        chip.className = 'cab-state-chip s' + code;
+    }
+}
 
 function _cabMakeNodes(grp) {
+    // Operator badge, firmware-style: a pure-black disc with the figure
+    // knocked out by #cab-badge-mask so the wash/cone colour shows through
+    // the silhouette, plus a soft drop shadow. One <g> per track; we move
+    // it with a transform so only the badge invalidates.
     var ns = 'http://www.w3.org/2000/svg';
-    var glow = document.createElementNS(ns, 'circle');
-    glow.setAttribute('r', '7');
-    glow.setAttribute('fill', '#7dd3fc');
-    glow.setAttribute('opacity', '0.30');
-    grp.appendChild(glow);
-    var ring = document.createElementNS(ns, 'circle');
-    ring.setAttribute('r', '4.5');
-    ring.setAttribute('fill', '#7dd3fc');
-    ring.setAttribute('filter', 'url(#cab-glow)');
-    grp.appendChild(ring);
-    var core = document.createElementNS(ns, 'circle');
-    core.setAttribute('r', '2');
-    core.setAttribute('fill', '#fff');
-    grp.appendChild(core);
-    // Distance label sits just above the dot. Tiny so it fits inside
-    // the 200x200 SVG without crowding. Stroke gives a thin halo so
-    // it stays legible against the dot or the ring colour.
-    var label = document.createElementNS(ns, 'text');
-    label.setAttribute('text-anchor', 'middle');
-    label.setAttribute('font-size', '8');
-    label.setAttribute('font-family', 'system-ui, -apple-system, sans-serif');
-    label.setAttribute('font-weight', '700');
-    label.setAttribute('fill', '#fff');
-    label.setAttribute('stroke', '#000');
-    label.setAttribute('stroke-width', '0.5');
-    label.setAttribute('paint-order', 'stroke');
-    grp.appendChild(label);
-    return { glow: glow, ring: ring, core: core, label: label };
+    var badge = document.createElementNS(ns, 'g');
+    var disc = document.createElementNS(ns, 'circle');
+    disc.setAttribute('cx', '0');
+    disc.setAttribute('cy', '0');
+    disc.setAttribute('r', '6.6');
+    disc.setAttribute('fill', '#000000');
+    disc.setAttribute('mask', 'url(#cab-badge-mask)');
+    disc.setAttribute('filter', 'url(#cab-badge-shadow)');
+    badge.appendChild(disc);
+    grp.appendChild(badge);
+    return { badge: badge };
 }
 
 function _cabRemoveNodes(d) {
     if (!d || !d.nodes) return;
-    [d.nodes.glow, d.nodes.ring, d.nodes.core, d.nodes.label].forEach(function(n) {
-        if (n && n.parentNode) n.parentNode.removeChild(n);
-    });
+    if (d.nodes.badge && d.nodes.badge.parentNode) {
+        d.nodes.badge.parentNode.removeChild(d.nodes.badge);
+    }
     d.nodes = null;
 }
 
@@ -3862,6 +3971,14 @@ function updateCabDisplay(detections) {
         var zm = det.z_m || 0;
         var inDanger  = _cabPointInAny(xm, zm, cabDangerShapes);
         var inWarning = !inDanger && _cabPointInAny(xm, zm, cabWarningShapes);
+        // Shape zones are the live alarm source; when none are configured
+        // (fresh install / bench demo) fall back to the radial bands the
+        // panel draws, so the demo states stay coherent with the visuals.
+        if (!cabDangerShapes.length && !cabWarningShapes.length) {
+            var distM = Math.hypot(xm, zm);
+            inDanger  = distM <= DANGER;
+            inWarning = !inDanger && distM <= WARNING;
+        }
         if (inDanger)  anyInDanger = true;
         if (inWarning) anyInWarning = true;
         var tid = det.track_id;
@@ -3889,73 +4006,101 @@ function updateCabDisplay(detections) {
         var sy = CAB_CENTER - d.z * scale;
         var dx = sx - CAB_CENTER, dy = sy - CAB_CENTER;
         var r = Math.sqrt(dx * dx + dy * dy);
-        if (r > CAB_VIEW_PX) {
-            // Beyond the 20 m view: pin to bezel so bearing stays correct.
-            var k = CAB_VIEW_PX / r;
+        var rim = CAB_VIEW_PX - CAB_SAFE_INSET;
+        if (r > rim) {
+            // Beyond the visible field: pin inside the rim (fw SAFE_INSET)
+            // so the bearing stays correct and the badge never clips.
+            var k = rim / r;
             sx = CAB_CENTER + dx * k;
             sy = CAB_CENTER + dy * k;
         }
-        // Hold opacity at full regardless of coast state. The server
-        // emits coasting:true on any NN-dropped frame, so a track with
-        // a 10 fps NN and a faster SSE tick would otherwise toggle
-        // between 1.0 and 0.55 every few frames — that's the "quick
-        // but frequent" flash. The coast loop already keeps position
-        // continuous, so we don't need a visual distinction here.
-        var op = 1.0;
-        if (d.nodes) {
-            // Recolour the dot per zone state. Light tints so the dot
-            // stays legible against the pulsing red/yellow background.
-            var dotFill = inDanger ? CAB_DOT_DANGER
-                        : inWarning ? CAB_DOT_WARN
-                        : CAB_DOT_SAFE;
-            d.nodes.glow.setAttribute('fill', dotFill);
-            d.nodes.ring.setAttribute('fill', dotFill);
-            d.nodes.glow.setAttribute('cx', sx.toFixed(1));
-            d.nodes.glow.setAttribute('cy', sy.toFixed(1));
-            d.nodes.glow.setAttribute('opacity', (op * 0.30).toFixed(2));
-            d.nodes.ring.setAttribute('cx', sx.toFixed(1));
-            d.nodes.ring.setAttribute('cy', sy.toFixed(1));
-            d.nodes.ring.setAttribute('opacity', op.toFixed(2));
-            d.nodes.core.setAttribute('cx', sx.toFixed(1));
-            d.nodes.core.setAttribute('cy', sy.toFixed(1));
-            d.nodes.core.setAttribute('opacity', op.toFixed(2));
-            // Distance label — sit it above the dot, but flip below if
-            // the dot is near the top edge so the text stays on-screen.
-            var dm = det.distance_m != null
-                ? det.distance_m
-                : Math.sqrt(d.x * d.x + d.z * d.z);
-            d.nodes.label.textContent = formatDist(dm);
-            var labelY = sy - 8;
-            if (labelY < 10) labelY = sy + 14;
-            d.nodes.label.setAttribute('x', sx.toFixed(1));
-            d.nodes.label.setAttribute('y', labelY.toFixed(1));
-            d.nodes.label.setAttribute('opacity', op.toFixed(2));
+        if (d.nodes && d.nodes.badge) {
+            d.nodes.badge.setAttribute('transform',
+                'translate(' + sx.toFixed(1) + ' ' + sy.toFixed(1) + ')');
         }
     });
 
-    // Age out dots we haven't seen recently. We do NOT delete on the
-    // first missing tick — that's where the flicker came from. The
-    // server-side coast loop already keeps tracks alive across NN
-    // dropouts; this TTL is the safety net for when a track is
-    // genuinely gone.
+    // Age out badges we haven't seen recently. We do NOT delete on the
+    // first missing tick — the server-side coast loop already keeps
+    // tracks alive across NN dropouts; this TTL is the safety net for
+    // when a track is genuinely gone.
+    var liveDots = 0;
     for (var tid in cabDots) {
-        if (seenThisTick[tid]) continue;
-        if (now - cabDots[tid].lastSeen > CAB_DOT_TTL_MS) {
+        if (!seenThisTick[tid] && now - cabDots[tid].lastSeen > CAB_DOT_TTL_MS) {
             _cabRemoveNodes(cabDots[tid]);
             delete cabDots[tid];
+        } else {
+            liveDots++;
         }
     }
 
-    // Pulse the whole disc red (danger) or yellow (warning) whenever
-    // anyone is inside one of those zones. Danger always wins. The CSS
-    // keyframes drive the actual fill animation — we only flip classes.
-    var bg = document.getElementById('cab-bg-disc');
-    if (bg) {
-        bg.classList.toggle('cab-bg-danger', anyInDanger);
-        bg.classList.toggle('cab-bg-warn',   !anyInDanger && anyInWarning);
-        // When neither class is set, the bg returns to its inline #050505.
+    // Scene state, firmware semantics: 3 = anyone in a danger zone,
+    // 2 = anyone in a warning zone, 1 = people detected but outside all
+    // zones, 0 = fully clear. Solid wash + cone recolour happen only on
+    // a real transition inside cabSetSceneState().
+    var state = anyInDanger ? 3 : anyInWarning ? 2 : liveDots > 0 ? 1 : 0;
+    cabSetSceneState(state);
+
+    // Idle wordmark — visible only on a fully clear scene.
+    var wm = document.getElementById('cab-wordmark');
+    if (wm) wm.setAttribute('opacity', liveDots === 0 ? '1' : '0');
+}
+
+// ── Bench simulation — physically coherent walk-through ───
+// Demo for visitors with or without a live OAK attached: one synthetic
+// person walks in along the centre of a real camera FOV cone (never
+// outside it — detections outside a camera's view are impossible),
+// approaches through warning into danger, lingers, and retreats. Runs
+// through the exact same pipeline as live detections.
+var _cabSim = {
+    active: false,
+    t0: 0,
+    PERIOD_MS: 24000,
+    current: function(now) {
+        var s = cabCoverage.length ? cabCoverage[0] : CAB_FALLBACK_SECTOR;
+        var a0 = s.start_deg, a1 = s.end_deg;
+        if (a1 < a0) a1 += 360;
+        var mid = (a0 + a1) / 2;
+        var halfSpan = Math.max((a1 - a0) / 2, 4);
+        var t = ((now - this.t0) % this.PERIOD_MS) / this.PERIOD_MS;  // 0..1
+        // Distance profile: ease in from just past the warning band, dwell
+        // briefly in danger, ease back out. Cosine keeps the motion human.
+        var dFar = Math.min((s.range_m || CAB_RANGE_M), CAB_RANGE_M) * 0.95;
+        var dNear = Math.max(DANGER * 0.45, 1.0);
+        var dist = dNear + (dFar - dNear) * (0.5 + 0.5 * Math.cos(t * 2 * Math.PI));
+        // Gentle lateral sway inside the cone, never beyond 60% of it.
+        var sway = Math.sin(t * 6 * Math.PI) * Math.min(halfSpan * 0.6, 14);
+        var bearingRad = (mid + sway) * Math.PI / 180;
+        return {
+            track_id: 'sim-walker',
+            label: 'person',
+            sim: true,
+            x_m: dist * Math.sin(bearingRad),
+            z_m: dist * Math.cos(bearingRad),
+            distance_m: dist
+        };
+    }
+};
+
+function cabSimToggle() {
+    _cabSim.active = !_cabSim.active;
+    if (_cabSim.active) _cabSim.t0 = performance.now();
+    var btn = document.getElementById('cab-sim-btn');
+    if (btn) {
+        btn.classList.toggle('active', _cabSim.active);
+        btn.innerHTML = _cabSim.active ? '&#9632; Stop simulation' : '&#9654; Simulate person';
     }
 }
+window.cabSimToggle = cabSimToggle;
+
+// Offline ticker: when no SSE frame has arrived recently (no OAK on the
+// bench), the sim drives the cab display directly so the demo always runs.
+window._lastHudAt = 0;
+setInterval(function() {
+    if (!_cabSim.active) return;
+    if (performance.now() - window._lastHudAt < 500) return;  // SSE alive — it merges the sim
+    updateCabDisplay([_cabSim.current(performance.now())]);
+}, 100);
 
 // ── Shared detection state for debug overlay + 3D scene ──
 var currentDetections = [];
@@ -4770,9 +4915,15 @@ function updateHud(data) {
 
     // Update shared detection state
     currentDetections = data.detections || [];
+    window._lastHudAt = performance.now();
 
-    // Drive the round AMOLED cab display preview from the same data.
-    updateCabDisplay(currentDetections);
+    // Drive the round cab display preview from the same data. When the
+    // bench simulation is on, its walker rides the live stream so every
+    // panel stays coherent with what the cab display shows.
+    var cabDetections = (_cabSim && _cabSim.active)
+        ? currentDetections.concat([_cabSim.current(window._lastHudAt)])
+        : currentDetections;
+    updateCabDisplay(cabDetections);
 
     // Zone visuals are intentionally muted while we focus on smooth
     // tracking. The server-side ZoneClassifier still runs and powers
