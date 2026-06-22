@@ -18,6 +18,24 @@ Architecture:
   * A second UDP socket listens on CONFIG_PORT for pushes from the tablet;
     on boot (and every 30s thereafter) the camera sends a config_request so
     the tablet re-serves current zones/pose even if the tablet rebooted.
+
+Trust model (ARCHITECTURE §4.3 / §5.1, review defect C-2):
+  * The OAK is the safety sensor but cannot do crypto — the Script-node VM
+    has no `hashlib`/`hmac` and only `json/math/socket/time`. So it CANNOT
+    verify the Ed25519 envelope the cloud signs. The verify anchor is the
+    P4/hub (it owns NVS, has a real CPU, and re-serves over :5557).
+  * Therefore the OAK trusts the P4/hub as the LAN config authority and its
+    config integrity rests on (a) LAN isolation — Z3 has no route to WAN/AP,
+    firewall-enforced — and (b) a SOURCE-IP ALLOWLIST here: :5557 config is
+    accepted ONLY from the allowlisted P4/hub source, every other datagram
+    is dropped. This stops a rogue camera / on-segment injector (T-8/T-12)
+    and forces an attacker to spoof the P4's address on a static-ARP segment.
+  * A monotonic config-revision gate rejects stale / out-of-order config
+    (replay / rollback within the window) so a re-sent older doc cannot
+    shrink the danger zone after a newer one applied (T-2 at the camera).
+  * Full per-frame crypto is deliberately NOT done at the OAK (D7); signing
+    is enforced upstream at the P4. The allowlist + isolation are the OAK's
+    enforcement. A future v3 may add a true Ed25519 path if the VM gains it.
 """
 
 SCRIPT_SOURCE = r"""
@@ -31,6 +49,12 @@ DEST_IP     = "__DEST_IP__"          # tablet IP
 DEST_PORT   = __DEST_PORT__          # tablet detections port (5556)
 CONFIG_PORT = __CONFIG_PORT__        # bidirectional config port (5557)
 CAMERA_ID   = "__CAMERA_ID__"
+# Source-IP allowlist for inbound :5557 config (review C-2). Only the P4/hub
+# LAN authority may rewrite our pose/zones/footprint/fps. "" disables the
+# check (NOT recommended — only for a single-host bench loopback). Baked to
+# DEST_IP by default since the P4 we send detections to is the same node that
+# serves config back over :5557.
+CONFIG_SRC_IP = "__CONFIG_SRC_IP__"
 LABELS      = __LABELS_JSON__        # list[str], indexed by d.label
 SAFETY_INDICES = __SAFETY_INDICES_JSON__   # list[int]
 UNITS       = "__UNITS__"
@@ -59,6 +83,13 @@ state = {
     "last_cfg_req":  0.0,
     "last_cfg_rx":   0.0,
     "last_send":     0.0,
+    # Monotonic config revision (review C-2): the highest config_version we
+    # have applied. Persisted across messages (in-RAM for the VM lifetime;
+    # the P4 holds the rollback-resistant NVS copy). A pushed config is
+    # applied only if its version is strictly greater, so a replayed/stale
+    # older doc on the segment is rejected. -1 = nothing applied yet, so the
+    # first legitimate push (and the baked fallback) is always accepted.
+    "cfg_revision":  -1,
 }
 
 ZONE_NONE = 0
@@ -105,8 +136,36 @@ def send_config_request():
     except Exception as e:
         node.warn("cfg request failed: " + str(e))
 
+def doc_revision(doc):
+    # Pull the monotonic config version off a pushed doc. The cloud envelope
+    # calls it "config_version" (ARCHITECTURE §5.1); "revision" is the P4 NVS
+    # name; "config_revision" is accepted for belt-and-suspenders. Returns an
+    # int, or None when the doc carries no version (legacy/local push).
+    for key in ("config_version", "revision", "config_revision"):
+        if key in doc and doc[key] is not None:
+            try:
+                return int(doc[key])
+            except Exception:
+                return None
+    return None
+
 def apply_config(doc):
     try:
+        # ── Monotonic revision gate (review C-2: anti-replay/rollback) ────
+        # Apply only if this doc's version is strictly newer than the last
+        # one we applied. A re-sent or out-of-order older doc (e.g. an
+        # attacker replaying a "danger zone = 0" push captured earlier, or a
+        # P4 that re-serves a stale generation) is dropped. Docs with NO
+        # version are still honoured (the P4's local config_request answer
+        # and the boot fallback may be unversioned) but they do NOT advance
+        # the counter, so they can never roll a real version backwards.
+        rev = doc_revision(doc)
+        if rev is not None:
+            if rev <= state["cfg_revision"]:
+                node.warn("config rejected: stale revision " + str(rev)
+                          + " <= applied " + str(state["cfg_revision"]))
+                return
+            state["cfg_revision"] = rev
         if "pose" in doc and doc["pose"] is not None:
             pose = doc["pose"]
             if "x_m" in pose:      state["pos_x"]   = float(pose["x_m"])
@@ -148,8 +207,21 @@ def apply_config(doc):
                 state["target_fps"] = tf
             except Exception:
                 pass
+        # TODO(v3 live-confidence push — NOT implemented, deliberately
+        # deferred): a desired `perception.confidence` / `model_id` is a
+        # REFLASH-LANE concern today (handled by build_standalone_v2.py via
+        # firmware_intent), NOT a hot push. To make confidence live without a
+        # reflash, the pipeline (build_standalone_v2.py) must route a
+        # dai.NeuralNetwork/SpatialDetectionNetwork runtime-config message
+        # from this Script node back into the NN node (a Script->NN XLink the
+        # pipeline does not wire today), and this apply_config would then gain
+        # a `perception.confidence` branch that pushes setConfidenceThreshold
+        # at runtime. model_id can never be a hot push (the .blob is baked).
+        # Until that pipeline path exists, confidence/model changes here are
+        # intentionally ignored on the wire.
         state["last_cfg_rx"] = time.time()
-        node.warn("config applied: zones=" + str(len(state["zones"]))
+        node.warn("config applied: rev=" + str(state["cfg_revision"])
+                  + " zones=" + str(len(state["zones"]))
                   + " pos=(" + str(state["pos_x"]) + "," + str(state["pos_y"]) + ")"
                   + " yaw_deg=" + str(state["yaw_rad"] * 180.0 / math.pi)
                   + " fps=" + str(state["target_fps"]))
@@ -160,10 +232,27 @@ def poll_config():
     drained = 0
     while drained < 16:
         try:
-            data, _addr = cfg_sock.recvfrom(8192)
+            data, addr = cfg_sock.recvfrom(8192)
         except Exception:
             return
         drained = drained + 1
+        # ── Source-IP allowlist (review C-2) ────────────────────────────
+        # addr is (ip, port). Accept config ONLY from the allowlisted P4/hub
+        # authority; silently drop anything else (a rogue camera or any
+        # other on-segment host cannot rewrite our safety config). The signed
+        # envelope is verified upstream at the P4 — this allowlist + LAN
+        # isolation are the OAK's enforcement. An empty CONFIG_SRC_IP
+        # disables the check (bench loopback only).
+        if CONFIG_SRC_IP:
+            src_ip = ""
+            try:
+                src_ip = addr[0]
+            except Exception:
+                src_ip = ""
+            if src_ip != CONFIG_SRC_IP:
+                node.warn("config dropped: src " + str(src_ip)
+                          + " not allowlisted (expect " + CONFIG_SRC_IP + ")")
+                continue
         try:
             apply_config(json.loads(data.decode("utf-8")))
         except Exception as e:
