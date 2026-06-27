@@ -1168,6 +1168,15 @@ def camera_mesh():
     )
 
 
+def _serial_from_mxid(m):
+    """GridFront serial = last 6 chars of the OAK MXID, uppercased.
+
+    Byte-identical to pipeline/standalone/build_standalone_v2.py:139-147.
+    Kept UN-hyphenated; the XXX-XXX form is platform display only.
+    """
+    return (m or "").strip()[-6:].upper()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="GridFront Safety Display Server")
     parser.add_argument(
@@ -1219,6 +1228,44 @@ if __name__ == "__main__":
             )
     else:
         print("  No installed_cameras configured — add one via Settings.")
+
+    # Host-mode camera-serial remap: rewrite each installed camera id from
+    # its sentinel/cam-N to the real OAK serial (last-6 of MXID, uppercased)
+    # so detections carry the same identity the standalone build bakes in.
+    # Build a lookup from every field a discovered device may be keyed by
+    # (PoE IP / name / device_id) -> MXID, then resolve per installed cam.
+    if installed_cameras and devices:
+        mxid_by_key = {}
+        for d in devices:
+            mx = d.get("mx_id")
+            if not mx:
+                continue
+            for key in (d.get("name"), d.get("mx_id")):
+                if key:
+                    mxid_by_key[str(key)] = mx
+        for cam in installed_cameras:
+            mx = (
+                mxid_by_key.get(str(cam.get("device_id")))
+                or mxid_by_key.get(str(cam.get("ip")))
+                or mxid_by_key.get(str(cam.get("id")))
+            )
+            if mx:
+                serial = _serial_from_mxid(mx)
+                if serial:
+                    print(f"  Remap camera {cam['id']} -> {serial} (MXID match)")
+                    cam["id"] = serial
+    # Any camera still on the cam-/sentinel id means its OAK was not
+    # discovered (or the PoE IP wasn't in the device name/key) — warn and
+    # leave it; the runner stays id-agnostic.
+    for cam in installed_cameras:
+        cid = str(cam.get("id", ""))
+        if cid.startswith("cam-") or cid == "pending-serial":
+            print(
+                f"  WARN: camera {cid!r} (device_id={cam.get('device_id')!r}) "
+                f"was not matched to a discovered OAK MXID — leaving id as-is. "
+                f"Confirm discovery returns its PoE IP in the device name/key, "
+                f"or add the MXID to config.json."
+            )
 
     from pipeline.pipeline_runner import PipelineRunner
     active_model = config.get("active_model", "yolov6n-coco")
