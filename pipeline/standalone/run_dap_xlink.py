@@ -35,7 +35,11 @@ def main() -> int:
     ap.add_argument("--meta", default=str(REPO / "models" / "yolov8n-coco.json"))
     ap.add_argument("--calib", default=str(REPO / "calib_oak.json"))
     ap.add_argument("--config", default=str(REPO / "config.json"))
-    ap.add_argument("--camera-id", default="cam-0")
+    # BENCH-ONLY: this tool runs the pipeline over XLink (host-attached) and
+    # NEVER flashes, so the baked id never reaches a production camera. The
+    # default is a non-serial BENCH placeholder, NOT a GridFront serial — pass
+    # --camera-id explicitly if a specific id is needed for a bench test.
+    ap.add_argument("--camera-id", default="BENCH-XLINK")
     ap.add_argument("--dest-ip", default="169.254.1.56")
     ap.add_argument("--oak-ip", default="169.254.1.222")
     ap.add_argument("--duration", type=float, default=30.0)

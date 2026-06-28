@@ -48,7 +48,8 @@ import time
 DEST_IP     = "__DEST_IP__"          # tablet IP
 DEST_PORT   = __DEST_PORT__          # tablet detections port (5556)
 CONFIG_PORT = __CONFIG_PORT__        # bidirectional config port (5557)
-CAMERA_ID   = "__CAMERA_ID__"
+CAMERA_ID   = "__CAMERA_ID__"       # GridFront serial (last-6 of OAK MXID), user-facing id
+CAMERA_MXID = "__CAMERA_MXID__"     # full OAK MXID — INTERNAL/logging only, never surfaced
 # Source-IP allowlist for inbound :5557 config (review C-2). Only the P4/hub
 # LAN authority may rewrite our pose/zones/footprint/fps. "" disables the
 # check (NOT recommended — only for a single-host bench loopback). Baked to
@@ -64,6 +65,7 @@ UNITS       = "__UNITS__"
 INIT_POS_X     = __INIT_POS_X__        # machine-frame X of camera mount (m)
 INIT_POS_Y     = __INIT_POS_Y__        # machine-frame Y of camera mount (m)
 INIT_YAW_DEG   = __INIT_YAW_DEG__      # rotation about machine vertical axis
+INIT_PITCH_DEG = __INIT_PITCH_DEG__    # downward camera tilt about its X axis (deg)
 INIT_ZONES     = __INIT_ZONES_JSON__   # [{"color","r"}, ...] — r is meters from machine edge
 INIT_MACHINE_LEN = __INIT_MACHINE_LEN_M__  # machine length along Y axis (m)
 INIT_MACHINE_WID = __INIT_MACHINE_WID_M__  # machine width along X axis (m)
@@ -71,11 +73,31 @@ INIT_TARGET_FPS = __INIT_TARGET_FPS__  # network send rate cap; tablet may overr
 
 CONFIG_REQUEST_INTERVAL = 30.0
 
+# Effective person confidence. The NN node is baked with a LOW catch floor
+# (0.30 in build_standalone_v2.py); THIS is the real operating threshold, and
+# it is RUNTIME-TUNABLE: the display pushes "min_confidence" over :5557 and
+# apply_config() updates it live, no reflash. Held in state[] (not a bare
+# global) so inner functions can mutate it in-place, same as pose/yaw.
+INIT_CONF_THRESHOLD = 0.55
+
 # ── State (dict so inner functions can mutate without `global`) ──────
 state = {
     "pos_x":         INIT_POS_X,
     "pos_y":         INIT_POS_Y,
     "yaw_rad":       INIT_YAW_DEG * math.pi / 180.0,
+    # Camera de-tilt: downward pitch about the camera X axis, applied in
+    # cam_to_machine BEFORE yaw so a tilted mast cam maps depth onto true
+    # ground-plane forward distance. Runtime-tunable via :5557 "pitch_deg".
+    "pitch_rad":     INIT_PITCH_DEG * math.pi / 180.0,
+    "conf_thresh":   INIT_CONF_THRESHOLD,
+    # Per-track EMA smoothing of machine-frame (x_m, y_m) to stop the radar
+    # dot jittering frame-to-frame. pos_ema maps track_id -> last smoothed
+    # (x, y); it is pruned every frame to the tracks present so it stays
+    # bounded for the VM lifetime. pos_alpha is the EMA factor: lower =
+    # smoother + laggier, higher = more responsive. 0.4 ≈ 0.25s time-constant
+    # at ~10fps. Runtime-tunable via :5557 "position_smoothing"/"smoothing".
+    "pos_ema":       {},
+    "pos_alpha":     0.4,
     "zones":         INIT_ZONES,
     "half_len":      INIT_MACHINE_LEN / 2.0,
     "half_wid":      INIT_MACHINE_WID / 2.0,
@@ -132,7 +154,11 @@ cfg_sock.setblocking(False)
 def send_config_request():
     try:
         msg = json.dumps({"type": "config_request", "camera_id": CAMERA_ID})
-        tx_sock.sendto(msg.encode("utf-8"), (DEST_IP, CONFIG_PORT))
+        # MUST send from cfg_sock (bound :5557), NOT tx_sock: the P4 replies to the
+        # request's SOURCE port, and only cfg_sock is read by poll_config(). Sending
+        # from tx_sock's ephemeral port means every reply lands unread and live config
+        # (pose/zones/pitch/fov) never applies — the camera silently keeps baked values.
+        cfg_sock.sendto(msg.encode("utf-8"), (DEST_IP, CONFIG_PORT))
     except Exception as e:
         node.warn("cfg request failed: " + str(e))
 
@@ -171,6 +197,54 @@ def apply_config(doc):
             if "x_m" in pose:      state["pos_x"]   = float(pose["x_m"])
             if "y_m" in pose:      state["pos_y"]   = float(pose["y_m"])
             if "yaw_deg" in pose:  state["yaw_rad"] = float(pose["yaw_deg"]) * math.pi / 180.0
+            # pitch_deg is the camera's downward tilt; de-tilt happens in
+            # cam_to_machine. Accepted at runtime in the same pose block.
+            if "pitch_deg" in pose and pose["pitch_deg"] is not None:
+                try:
+                    state["pitch_rad"] = float(pose["pitch_deg"]) * math.pi / 180.0
+                except Exception:
+                    pass
+        # Runtime-tunable person confidence (the display's live knob). Accept
+        # either "min_confidence" or "confidence", clamp to a sane [0.10,0.95]
+        # window, and update the effective threshold the tracklet loop filters
+        # on. This is the on-camera analogue of the deferred v3 NN push: we
+        # don't retune the NN node, we raise/lower the SCRIPT-side gate, so it
+        # works with no Script->NN XLink and no reflash.
+        conf_in = None
+        if "min_confidence" in doc and doc["min_confidence"] is not None:
+            conf_in = doc["min_confidence"]
+        elif "confidence" in doc and doc["confidence"] is not None:
+            conf_in = doc["confidence"]
+        if conf_in is not None:
+            try:
+                cv = float(conf_in)
+                if cv >= 0.10 and cv <= 0.95:
+                    state["conf_thresh"] = cv
+                    node.warn("conf_thresh updated -> " + str(cv))
+                else:
+                    node.warn("conf ignored (out of [0.10,0.95]): " + str(cv))
+            except Exception:
+                node.warn("conf ignored (non-numeric): " + str(conf_in))
+        # Runtime-tunable per-track position EMA factor (the display's live
+        # smoothing knob). Accept either "position_smoothing" or "smoothing",
+        # clamp to a sane [0.05,1.0] window, and update state["pos_alpha"] the
+        # detection loop smooths on. Same pattern as min_confidence above —
+        # works with no reflash.
+        smooth_in = None
+        if "position_smoothing" in doc and doc["position_smoothing"] is not None:
+            smooth_in = doc["position_smoothing"]
+        elif "smoothing" in doc and doc["smoothing"] is not None:
+            smooth_in = doc["smoothing"]
+        if smooth_in is not None:
+            try:
+                sv = float(smooth_in)
+                if sv >= 0.05 and sv <= 1.0:
+                    state["pos_alpha"] = sv
+                    node.warn("pos_alpha updated -> " + str(sv))
+                else:
+                    node.warn("smoothing ignored (out of [0.05,1.0]): " + str(sv))
+            except Exception:
+                node.warn("smoothing ignored (non-numeric): " + str(smooth_in))
         if "zones" in doc and doc["zones"] is not None:
             # r_m is now interpreted as "distance from machine edge", not
             # circle radius around an origin. cx_m/cy_m are accepted for
@@ -207,23 +281,21 @@ def apply_config(doc):
                 state["target_fps"] = tf
             except Exception:
                 pass
-        # TODO(v3 live-confidence push — NOT implemented, deliberately
-        # deferred): a desired `perception.confidence` / `model_id` is a
-        # REFLASH-LANE concern today (handled by build_standalone_v2.py via
-        # firmware_intent), NOT a hot push. To make confidence live without a
-        # reflash, the pipeline (build_standalone_v2.py) must route a
-        # dai.NeuralNetwork/SpatialDetectionNetwork runtime-config message
-        # from this Script node back into the NN node (a Script->NN XLink the
-        # pipeline does not wire today), and this apply_config would then gain
-        # a `perception.confidence` branch that pushes setConfidenceThreshold
-        # at runtime. model_id can never be a hot push (the .blob is baked).
-        # Until that pipeline path exists, confidence/model changes here are
-        # intentionally ignored on the wire.
+        # NOTE: "confidence" is now applied SCRIPT-SIDE above (state["conf_thresh"],
+        # the tracklet-loop gate) — a true live knob with no reflash and no
+        # Script->NN XLink. The NN node itself keeps its baked 0.30 catch floor;
+        # we only ever raise the gate ABOVE that floor, so the display can push
+        # min_confidence anywhere in [0.10,0.95] live. `model_id` can still never
+        # be a hot push (the .blob is baked) — that stays a reflash-lane concern
+        # in build_standalone_v2.py via firmware_intent.
         state["last_cfg_rx"] = time.time()
         node.warn("config applied: rev=" + str(state["cfg_revision"])
                   + " zones=" + str(len(state["zones"]))
                   + " pos=(" + str(state["pos_x"]) + "," + str(state["pos_y"]) + ")"
                   + " yaw_deg=" + str(state["yaw_rad"] * 180.0 / math.pi)
+                  + " pitch_deg=" + str(state["pitch_rad"] * 180.0 / math.pi)
+                  + " conf=" + str(state["conf_thresh"])
+                  + " smooth=" + str(state["pos_alpha"])
                   + " fps=" + str(state["target_fps"]))
     except Exception as e:
         node.warn("apply_config failed: " + str(e))
@@ -289,17 +361,41 @@ def classify(mx, my):
                 best_id = z.get("id", "")
     return best_code, zone_name_from_code(best_code), best_id
 
-def cam_to_machine(x_c, z_c):
-    # Camera frame: x_c = right, z_c = forward, origin at lens.
-    # Machine frame: X = right, Y = forward, origin at machine centre.
+def cam_to_machine(x_c, y_c, z_c):
+    # Camera OPTICAL frame: x_c = right, y_c = DOWN, z_c = forward, origin at
+    # lens. Machine frame: X = right, Y = forward, origin at machine centre.
     # Yaw = 0 ⇒ camera forward aligned with machine +Y.
+    #
+    # STEP 1 — PITCH de-tilt (about the camera X axis), applied BEFORE yaw.
+    # A mast cam tilted DOWN by p degrees sees the ground's far distance
+    # foreshortened in z_c; rotating (z,y) back up by p recovers the true
+    # ground-plane forward distance. Because +y is DOWN, a downward tilt
+    # brings the floor's far distance back up via the +y*sin(p) term:
+    #     ground_forward = z_c*cos(p) + y_c*sin(p)
+    # No-op when pitch_rad == 0 (default / level bench), so the existing
+    # yaw+translate path is untouched on a level mount.
+    # SIGN CAVEAT: this sign (downward pitch = positive p, +y*sin(p)) MUST be
+    # confirmed with a tape-measure test on a real tilted mount before trust —
+    # the bench is level so this branch is currently INACTIVE and unverified.
+    p = state["pitch_rad"]
+    if p != 0.0:
+        cp = math.cos(p)
+        sp = math.sin(p)
+        z_fwd = z_c * cp + y_c * sp
+    else:
+        z_fwd = z_c
+    # STEP 2 — YAW rotation + translate (unchanged), now on the de-tilted
+    # forward distance.
     c = math.cos(state["yaw_rad"])
     s = math.sin(state["yaw_rad"])
-    dx =  x_c * c + z_c * s
-    dy = -x_c * s + z_c * c
+    dx =  x_c * c + z_fwd * s
+    dy = -x_c * s + z_fwd * c
     return state["pos_x"] + dx, state["pos_y"] + dy
 
 # Boot: announce ourselves so the tablet pushes current config.
+# One-time traceability line: the user-facing GridFront serial plus the full
+# OAK MXID (the latter is internal/logging only — never the wire id).
+node.warn("boot camera_id=" + CAMERA_ID + " mxid=" + CAMERA_MXID)
 send_config_request()
 state["last_cfg_req"] = time.time()
 
@@ -345,6 +441,11 @@ while True:
     outside_count = 0
     closest = None
     raw_count = 0
+    # Track ids seen THIS frame, used to prune state["pos_ema"] after the loop
+    # so the smoothing cache stays bounded. No set() type in this VM, so a
+    # dict-as-set: keys are the live track ids. Built every frame (incl. 0
+    # detections) so the prune below always runs and never leaks stale tracks.
+    current_tids = {}
 
     for t in tracklets:
         if t.status == 2 or t.status == 3:
@@ -361,10 +462,37 @@ while True:
                 break
         if not is_safe:
             continue
+
+        # Runtime confidence gate (the display's live knob, state["conf_thresh"],
+        # default 0.55). The tracklet's source NN detection carries the raw
+        # confidence (t.srcImgDetection.confidence in DepthAI 2.x). Skip any
+        # detection below the gate BEFORE it is counted or added to the payload,
+        # so a lower NN floor (0.30, baked) can be raised live without a reflash.
+        conf = 0.0
+        try:
+            conf = float(t.srcImgDetection.confidence)
+        except Exception:
+            conf = 0.0
+        if conf < state["conf_thresh"]:
+            continue
+
         sc = t.spatialCoordinates
         x_c = float(sc.x) / 1000.0
+        y_c = float(sc.y) / 1000.0
         z_c = float(sc.z) / 1000.0
-        mx, my = cam_to_machine(x_c, z_c)
+        mx, my = cam_to_machine(x_c, y_c, z_c)
+        # Per-track EMA on the machine-frame position to de-jitter the radar
+        # dot. Smooth ONCE here, before classify(), so the dot AND its zone
+        # colour are computed from the same smoothed point (no double-apply).
+        # distance_m below stays RAW (camera-frame range) for closest/zone bar.
+        tid = t.id
+        current_tids[tid] = True
+        a = state["pos_alpha"]
+        prev = state["pos_ema"].get(tid)
+        if prev is not None:
+            mx = a * mx + (1.0 - a) * prev[0]
+            my = a * my + (1.0 - a) * prev[1]
+        state["pos_ema"][tid] = (mx, my)
         z_code, z_name, z_id = classify(mx, my)
         # Range from camera (for closest_m / UI bar) — machine-frame dist
         # is less useful when multiple cameras have different origins.
@@ -375,11 +503,12 @@ while True:
             label_name = LABELS[t.label]
 
         detections.append({
-            "track_id":   t.id,
+            "track_id":   tid,
             "label":      label_name,
             "x_m":        round(mx, 2),
             "y_m":        round(my, 2),
             "distance_m": round(cam_dist, 2),
+            "confidence": round(conf, 2),
             "zone_code":   z_code,
             "zone":        z_name,
             "zone_id":     z_id,
@@ -392,6 +521,16 @@ while True:
             outside_count = outside_count + 1
         if closest is None or cam_dist < closest:
             closest = cam_dist
+
+    # Prune the smoothing cache to the tracks seen THIS frame so it stays
+    # bounded over the VM lifetime. Runs every frame — including 0-detection
+    # frames (current_tids empty ⇒ cache emptied), and BEFORE the rate-cap
+    # `continue` below so a throttled frame still drops departed tracks.
+    new_ema = {}
+    for k in state["pos_ema"]:
+        if k in current_tids:
+            new_ema[k] = state["pos_ema"][k]
+    state["pos_ema"] = new_ema
 
     # Network send rate cap. Inference still runs at the camera's full
     # rate (locked at flash time) so danger/warning classification stays

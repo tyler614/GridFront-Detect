@@ -22,6 +22,7 @@ import depthai as dai
 
 from pipeline.standalone.build_standalone_v2 import (
     build_pipeline, _extract_pose_and_zones,
+    _discover_oak_mxid, _serial_from_mxid,
 )
 import json
 
@@ -51,7 +52,12 @@ def main() -> int:
     ap.add_argument("--meta",       required=True)
     ap.add_argument("--dap",        required=True)
     ap.add_argument("--config",     default=str(REPO / "config.json"))
-    ap.add_argument("--camera-id",  default="cam-0")
+    ap.add_argument("--camera-id",  default=None,
+                    help="OPTIONAL manual override for the baked camera identity. When "
+                         "omitted (the default), the GridFront serial (last 6 chars of "
+                         "the connected OAK's MXID, uppercased) is derived at flash time "
+                         "and baked — same default-derives-serial behavior as the "
+                         "production build_standalone_v2 path. Do NOT hardcode cam-0.")
     ap.add_argument("--dest-ip",    default="169.254.1.56")
     ap.add_argument("--dest-port",  type=int, default=5556)
     ap.add_argument("--config-port",type=int, default=5557)
@@ -69,28 +75,56 @@ def main() -> int:
         meta = json.load(f)
     with open(args.config) as f:
         cfg = json.load(f)
-    pos_x, pos_y, yaw_deg, zones, mlen, mwid = _extract_pose_and_zones(cfg, args.camera_id)
+    # Pose key: only valid when an explicit id selects a config entry. When
+    # deriving the serial there is no slot key, so pose falls back to empty
+    # (the tablet pushes the real pose over :5557 on boot).
+    pose_key = args.camera_id if args.camera_id else ""
+    pos_x, pos_y, yaw_deg, pitch_deg, zones, mlen, mwid = _extract_pose_and_zones(cfg, pose_key)
 
     allow_classes: set[str] | None = None
     if args.only_classes.strip():
         allow_classes = {c.strip() for c in args.only_classes.split(",") if c.strip()}
         logger.info("Class filter: only %s", sorted(allow_classes))
 
-    pipeline = build_pipeline(
-        blob_path=Path(args.blob), model_meta=meta,
-        dest_ip=args.dest_ip, dest_port=args.dest_port,
-        config_port=args.config_port, camera_id=args.camera_id,
-        pos_x=pos_x, pos_y=pos_y, yaw_deg=yaw_deg, zones=zones,
-        machine_len_m=mlen, machine_wid_m=mwid,
-        units=args.units, fps=args.fps, target_fps=args.target_fps,
-        calib_json=Path(args.calib), allow_classes=allow_classes,
-    )
-
     logger.warning("============================================================")
     logger.warning("  Power-cycle the OAK now. Spam-attaching for 180s...")
     logger.warning("============================================================")
 
     deadline = time.time() + 180
+
+    # Phase 0: derive the GridFront serial from the connected device BEFORE
+    # building (so the baked __CAMERA_ID__ is the serial, not a slot id). This
+    # mirrors build_standalone_v2's default-derives-serial flash path so that if
+    # flash_recover is ever used to re-bake a PRODUCTION camera it stamps the
+    # serial, not cam-0. A manual --camera-id still overrides verbatim. Discovery
+    # is local XLink/Ethernet enumeration — no network/platform call.
+    camera_mxid = ""
+    camera_id = args.camera_id
+    if camera_id is None:
+        mxid, _bl0 = _discover_oak_mxid(args.oak_ip, timeout_s=60.0)
+        if _bl0 is None or not mxid:
+            logger.error("Could not discover OAK MXID at %s to derive the serial. "
+                         "Power-cycle into BOOTLOADER, or pass --camera-id to override.",
+                         args.oak_ip)
+            return 1
+        camera_mxid = mxid
+        camera_id = _serial_from_mxid(mxid)
+        logger.info("Derived GridFront serial: GF_SERIAL=%s (GF_MXID=%s)", camera_id, camera_mxid)
+        try: del _bl0   # drop discovery handle; phase-1 attach() re-grabs the bootloader
+        except Exception: pass
+        time.sleep(2)
+    else:
+        logger.info("Manual --camera-id override: baking id=%s", camera_id)
+
+    pipeline = build_pipeline(
+        blob_path=Path(args.blob), model_meta=meta,
+        dest_ip=args.dest_ip, dest_port=args.dest_port,
+        config_port=args.config_port, camera_id=camera_id, camera_mxid=camera_mxid,
+        pos_x=pos_x, pos_y=pos_y, yaw_deg=yaw_deg, pitch_deg=pitch_deg, zones=zones,
+        machine_len_m=mlen, machine_wid_m=mwid,
+        units=args.units, fps=args.fps, target_fps=args.target_fps,
+        calib_json=Path(args.calib), allow_classes=allow_classes,
+    )
 
     # Phase 1: clear the broken app so OAK stops re-rebooting.
     bl = attach(args.oak_ip, deadline)

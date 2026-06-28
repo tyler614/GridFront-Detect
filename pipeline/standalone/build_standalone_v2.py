@@ -16,7 +16,12 @@ Architecture (v2 zone-based):
 Usage (from detect.gridfront.io root, with the 2.x venv active):
 
     .venv2x/Scripts/python.exe -m pipeline.standalone.build_standalone_v2 \\
-        --camera-id cam-0 --dest-ip 169.254.1.56 --confirm-flash
+        --dest-ip 169.254.1.56 --confirm-flash
+
+    Omitting --camera-id (the recommended path) derives the GridFront serial
+    — the last 6 chars of the connected OAK's MXID, uppercased — at flash time
+    and bakes THAT as the wire camera_id. Pass --camera-id only as an explicit
+    manual override; do NOT hardcode cam-0.
 """
 from __future__ import annotations
 
@@ -63,10 +68,10 @@ def _safety_indices(labels: list[str], override: set[str] | None = None) -> list
     return sorted(i for i, name in enumerate(labels) if name in allow)
 
 
-def _extract_pose_and_zones(cfg: dict, camera_id: str) -> tuple[float, float, float, list[dict], float, float]:
+def _extract_pose_and_zones(cfg: dict, camera_id: str) -> tuple[float, float, float, float, list[dict], float, float]:
     """Pull initial pose, zones, and machine footprint out of config.json.
 
-    Returns (pos_x_m, pos_y_m, yaw_deg, zones, machine_len_m, machine_wid_m).
+    Returns (pos_x_m, pos_y_m, yaw_deg, pitch_deg, zones, machine_len_m, machine_wid_m).
     Zone shape is [{"id", "zone", "severity_code", "r"}] where r is
     distance from the machine edge — the OAK's classify() does point-to-
     rectangle distance using (machine_len, machine_wid) as the rectangle.
@@ -74,6 +79,7 @@ def _extract_pose_and_zones(cfg: dict, camera_id: str) -> tuple[float, float, fl
     pos_x = 0.0
     pos_y = 0.0
     yaw_deg = 0.0
+    pitch_deg = 0.0
     for cam in cfg.get("installed_cameras", []):
         if cam.get("id") == camera_id:
             pos = cam.get("position_m") or [0.0, 0.0, 0.0]
@@ -88,6 +94,9 @@ def _extract_pose_and_zones(cfg: dict, camera_id: str) -> tuple[float, float, fl
                 pos_x = float(pos[0])
                 pos_y = float(pos[1])
             yaw_deg = float(cam.get("yaw_deg", 0.0))
+            # Downward camera tilt (de-tilt happens on-OAK in cam_to_machine).
+            # 0.0 default => no-op, so a level/unspecified mount is unchanged.
+            pitch_deg = float(cam.get("pitch_deg", 0.0))
             break
 
     fp = cfg.get("machine_footprint_m") or {}
@@ -124,7 +133,62 @@ def _extract_pose_and_zones(cfg: dict, camera_id: str) -> tuple[float, float, fl
                           "severity_code": code,
                           "r": float(r)})
 
-    return pos_x, pos_y, yaw_deg, zones, machine_len, machine_wid
+    return pos_x, pos_y, yaw_deg, pitch_deg, zones, machine_len, machine_wid
+
+
+def _serial_from_mxid(mxid: str) -> str:
+    """GridFront serial = last 6 chars of the OAK MXID, uppercased.
+
+    e.g. MXID '194430100112F17D00' -> 'F17D00'. This is the ONLY user-facing
+    camera identity; the full MXID is internal/logging only and must never be
+    surfaced (no Luxonis/OAK/MXID branding leaks to the operator).
+    """
+    s = (mxid or "").strip()
+    return s[-6:].upper()
+
+
+def _discover_oak_mxid(oak_ip: str, timeout_s: float = 120.0):
+    """OFFLINE local discovery of the connected OAK's MXID + a bootloader handle.
+
+    A DeviceInfo built from a bare IP string has an EMPTY mxid on depthai
+    2.32 (there is no getDeviceId() on this version — the accessor is
+    getMxId()). The MXID is only populated by DISCOVERY, which is local
+    XLink/Ethernet enumeration — no network/platform call. We pick the
+    discovered device whose name/IP matches ``oak_ip`` (else the first
+    BOOTLOADER-state device), read its MXID, and build the bootloader from
+    THAT discovered DeviceInfo so the same handle carries the MXID.
+
+    Returns (mxid:str, bootloader:dai.DeviceBootloader) or (None, None) on
+    timeout.
+    """
+    deadline = time.time() + timeout_s
+    tries = 0
+    while time.time() < deadline:
+        tries += 1
+        try:
+            devices = dai.DeviceBootloader.getAllAvailableDevices()
+        except Exception:
+            devices = []
+        chosen = None
+        for dev in devices:
+            # info.name carries the device IP for PoE/Ethernet OAKs.
+            name = getattr(dev, "name", "") or ""
+            if oak_ip and oak_ip in name:
+                chosen = dev
+                break
+        if chosen is None and devices:
+            # Fall back to the first discovered (BOOTLOADER-state) device.
+            chosen = devices[0]
+        if chosen is not None:
+            mxid = chosen.getMxId() if hasattr(chosen, "getMxId") else getattr(chosen, "mxid", "")
+            try:
+                bl = dai.DeviceBootloader(chosen)
+            except Exception:
+                # Device discovered but not yet attachable — keep polling.
+                continue
+            logger.info("Discovered OAK on try #%d: name=%s mxid=%s", tries, getattr(chosen, "name", "?"), mxid)
+            return mxid, bl
+    return None, None
 
 
 def _load_firmware_intent(path: Path) -> dict:
@@ -266,9 +330,10 @@ def _record_active_after_flash(path: Path, intent: dict,
 
 
 def _bake_script(*, dest_ip, dest_port, config_port, camera_id,
-                 labels, units, pos_x, pos_y, yaw_deg, zones,
+                 labels, units, pos_x, pos_y, yaw_deg, pitch_deg, zones,
                  machine_len_m: float, machine_wid_m: float,
                  target_fps: float, config_src_ip: str = "",
+                 camera_mxid: str = "",
                  allow_classes: set[str] | None = None) -> str:
     src = SCRIPT_SOURCE
     repl = {
@@ -277,12 +342,14 @@ def _bake_script(*, dest_ip, dest_port, config_port, camera_id,
         "__CONFIG_PORT__":         str(config_port),
         "__CONFIG_SRC_IP__":       config_src_ip,
         "__CAMERA_ID__":           camera_id,
+        "__CAMERA_MXID__":         camera_mxid,
         "__LABELS_JSON__":         json.dumps(labels),
         "__SAFETY_INDICES_JSON__": json.dumps(_safety_indices(labels, allow_classes)),
         "__UNITS__":               units,
         "__INIT_POS_X__":          f"{pos_x:.3f}",
         "__INIT_POS_Y__":          f"{pos_y:.3f}",
         "__INIT_YAW_DEG__":        f"{yaw_deg:.3f}",
+        "__INIT_PITCH_DEG__":      f"{pitch_deg:.3f}",
         "__INIT_ZONES_JSON__":     json.dumps(zones),
         "__INIT_MACHINE_LEN_M__":  f"{machine_len_m:.3f}",
         "__INIT_MACHINE_WID_M__":  f"{machine_wid_m:.3f}",
@@ -296,11 +363,12 @@ def _bake_script(*, dest_ip, dest_port, config_port, camera_id,
 def build_pipeline(*, blob_path: Path, model_meta: dict,
                    dest_ip: str, dest_port: int, config_port: int,
                    camera_id: str,
-                   pos_x: float, pos_y: float, yaw_deg: float,
+                   pos_x: float, pos_y: float, yaw_deg: float, pitch_deg: float,
                    zones: list[dict],
                    machine_len_m: float, machine_wid_m: float,
                    units: str, fps: int, target_fps: float,
                    calib_json: Path, config_src_ip: str = "",
+                   camera_mxid: str = "",
                    allow_classes: set[str] | None = None) -> dai.Pipeline:
     p = dai.Pipeline()
     p.setOpenVINOVersion(dai.OpenVINO.VERSION_2022_1)
@@ -310,21 +378,34 @@ def build_pipeline(*, blob_path: Path, model_meta: dict,
 
     input_size = model_meta["nn_config"]["input_size"]
     w, h = (int(x) for x in input_size.split("x"))
-    classes = int(model_meta["nn_config"]["NN_specific_metadata"]["classes"])
-    conf_thresh = float(model_meta["nn_config"]["NN_specific_metadata"]["confidence_threshold"])
-    iou_thresh = float(model_meta["nn_config"]["NN_specific_metadata"]["iou_threshold"])
-    coords = int(model_meta["nn_config"]["NN_specific_metadata"]["coordinates"])
+    nn_meta = model_meta["nn_config"]["NN_specific_metadata"]
+    classes = int(nn_meta["classes"])
+    conf_thresh = float(nn_meta["confidence_threshold"])
+    iou_thresh = float(nn_meta.get("iou_threshold", 0.5))
+    coords = int(nn_meta.get("coordinates", 4))
     labels = list(model_meta["mappings"]["labels"])
+    # NN head family decides which spatial-detection node we build. YOLO uses a
+    # grid+anchor head (createYoloSpatialDetectionNetwork, needs numClasses /
+    # anchors / masks / iouThreshold); SSD/MobileNet uses a DetectionOutput head
+    # (createMobileNetSpatialDetectionNetwork, NONE of those setters exist on it
+    # — calling them would crash). Key off the meta's NN_family (case-insensitive).
+    nn_family = str(model_meta["nn_config"].get("NN_family", "YOLO")).strip().lower()
+    is_mobilenet = nn_family in ("mobilenet", "ssd")
 
     cam = p.createColorCamera()
     cam.setBoardSocket(dai.CameraBoardSocket.RGB)
     cam.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
     cam.setPreviewSize(w, h)
     cam.setInterleaved(False)
-    # Luxonis depthai-zoo YOLOv8/v6 blobs are trained with Ultralytics,
-    # which uses RGB. Sending BGR to these blobs silently produces
-    # zero detections (confidences never clear the threshold).
-    cam.setColorOrder(dai.ColorCameraProperties.ColorOrder.RGB)
+    # Color order is model-family dependent (wrong order silently produces zero
+    # detections — confidences never clear the threshold):
+    #   * Luxonis depthai-zoo YOLOv8/v6 blobs are trained with Ultralytics → RGB.
+    #   * Intel OMZ SSDs (person-detection-0201) are trained on BGR, with mean/
+    #     scale baked into the IR, so the planar U8 frame must be fed BGR.
+    cam.setColorOrder(
+        dai.ColorCameraProperties.ColorOrder.BGR if is_mobilenet
+        else dai.ColorCameraProperties.ColorOrder.RGB
+    )
     # YOLO input is square; 1080p sensor is 16:9. Without this, the
     # default center-crop would discard the left/right sides of the
     # frame and shrink effective FOV for detection.
@@ -341,38 +422,57 @@ def build_pipeline(*, blob_path: Path, model_meta: dict,
     mono_r.setFps(fps)
 
     stereo = p.createStereoDepth()
-    stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_DENSITY)
+    stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_ACCURACY)
     stereo.initialConfig.setMedianFilter(dai.MedianFilter.KERNEL_7x7)
     stereo.setLeftRightCheck(True)
-    # ExtendedDisparity pushes stereo min depth from ~35cm to ~17cm, so a
-    # person standing 1ft from the camera is still inside the valid depth
-    # range instead of returning all-zero pixels.
-    stereo.setExtendedDisparity(True)
-    stereo.setSubpixel(False)
+    # Standard config (user doesn't need sub-37cm near-field). Subpixel gives
+    # ~754 depth levels for steadier far-field distance; it's mutually exclusive
+    # with ExtendedDisparity, so extended OFF. MinZ ~37cm @ 800P — fine here.
+    stereo.setExtendedDisparity(False)
+    stereo.setSubpixel(True)
     stereo.setDepthAlign(dai.CameraBoardSocket.RGB)
     mono_l.out.link(stereo.left)
     mono_r.out.link(stereo.right)
 
     anchors_list = [float(a) for a in
-                    model_meta["nn_config"]["NN_specific_metadata"].get("anchors", [])]
+                    nn_meta.get("anchors", [])]
     anchor_masks = {k: list(v) for k, v in
-                    model_meta["nn_config"]["NN_specific_metadata"].get("anchor_masks", {}).items()}
+                    nn_meta.get("anchor_masks", {}).items()}
 
-    nn = p.createYoloSpatialDetectionNetwork()
+    # SSD/MobileNet head vs YOLO head: the node class and the head-specific
+    # setters differ. The MobileNet node has a DetectionOutput layer baked in,
+    # so it takes NONE of numClasses/coordinateSize/anchors/anchorMasks/
+    # iouThreshold (those methods don't exist on it). Everything below the
+    # branch (confidence floor, bbox scale, spatial algo, depth thresholds,
+    # input wiring) is shared and model-agnostic.
+    if is_mobilenet:
+        nn = p.createMobileNetSpatialDetectionNetwork()
+    else:
+        nn = p.createYoloSpatialDetectionNetwork()
     nn.setBlobPath(str(blob_path))
-    nn.setConfidenceThreshold(conf_thresh)
-    nn.setNumClasses(classes)
-    nn.setCoordinateSize(coords)
-    nn.setAnchors(anchors_list)
-    nn.setAnchorMasks(anchor_masks)
-    nn.setIouThreshold(iou_thresh)
-    nn.setBoundingBoxScaleFactor(0.5)
-    # Lower bound was 300mm, which discards most torso pixels when the
-    # subject is at ~1ft and skews the averaged depth out to 2-3ft. With
-    # ExtendedDisparity on the stereo min is ~170mm, so 100mm gives a
-    # safe margin without admitting noise pixels.
-    nn.setDepthLowerThreshold(100)
-    nn.setDepthUpperThreshold(25_000)
+    # NN confidence is a LOW CATCH FLOOR (0.30), NOT the operating point.
+    # Effective person confidence is the script's runtime CONF_THRESHOLD
+    # (default 0.55), tunable live via :5557 — keep the NN floor low so the
+    # display can LOWER confidence without a reflash. (conf_thresh read from
+    # meta is intentionally ignored here for that reason.)
+    nn.setConfidenceThreshold(0.30)
+    if not is_mobilenet:
+        # YOLO-only head params. SSD has no anchors/masks/classes/iou.
+        nn.setNumClasses(classes)
+        nn.setCoordinateSize(coords)
+        nn.setAnchors(anchors_list)
+        nn.setAnchorMasks(anchor_masks)
+        nn.setIouThreshold(iou_thresh)
+    # Depth ROI samples the torso, not the background behind a thin limb, so
+    # x/y stops jumping frame-to-frame. 0.35 of the bbox centred on the body.
+    nn.setBoundingBoxScaleFactor(0.35)
+    # MEDIAN over the ROI depth pixels rejects the few far/zero outliers a
+    # MEAN would smear in, further stabilising the spatial coordinate.
+    nn.setSpatialCalculationAlgorithm(dai.SpatialLocationCalculatorAlgorithm.MEDIAN)
+    # Standard config: floor 500mm (below the ~37cm MinZ this matters little),
+    # ceiling 12m drops far-field background the cropped torso ROI shouldn't read.
+    nn.setDepthLowerThreshold(500)
+    nn.setDepthUpperThreshold(12_000)
     nn.input.setBlocking(False)
 
     cam.preview.link(nn.input)
@@ -397,6 +497,11 @@ def build_pipeline(*, blob_path: Path, model_meta: dict,
     tracker.setTrackerType(dai.TrackerType.ZERO_TERM_COLOR_HISTOGRAM)
     tracker.setTrackerIdAssignmentPolicy(dai.TrackerIdAssignmentPolicy.SMALLEST_ID)
     tracker.setMaxObjectsToTrack(20)
+    # A track must persist ~4 frames before it's reported as a real instance.
+    # Kills one-frame ghost births (a spurious NN box that never re-confirms)
+    # that would otherwise inflate the person count. Verified present on
+    # dai.node.ObjectTracker in depthai 2.32.
+    tracker.setTrackletBirthThreshold(4)
     safety = _safety_indices(labels, allow_classes)
     if safety:
         tracker.setDetectionLabelsToTrack(safety)
@@ -411,8 +516,8 @@ def build_pipeline(*, blob_path: Path, model_meta: dict,
     script.setProcessor(dai.ProcessorType.LEON_CSS)
     script.setScript(_bake_script(
         dest_ip=dest_ip, dest_port=dest_port, config_port=config_port,
-        camera_id=camera_id, labels=labels, units=units,
-        pos_x=pos_x, pos_y=pos_y, yaw_deg=yaw_deg, zones=zones,
+        camera_id=camera_id, camera_mxid=camera_mxid, labels=labels, units=units,
+        pos_x=pos_x, pos_y=pos_y, yaw_deg=yaw_deg, pitch_deg=pitch_deg, zones=zones,
         machine_len_m=machine_len_m, machine_wid_m=machine_wid_m,
         target_fps=target_fps, config_src_ip=config_src_ip,
         allow_classes=allow_classes,
@@ -424,8 +529,13 @@ def build_pipeline(*, blob_path: Path, model_meta: dict,
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--camera-id",     default="cam-0",
-                    help="Which installed_cameras[] entry to bake as fallback pose + zones.")
+    ap.add_argument("--camera-id",     default=None,
+                    help="OPTIONAL manual override for the baked camera identity. When "
+                         "omitted (the default), the GridFront serial — the last 6 chars "
+                         "of the connected OAK's MXID, uppercased — is derived at flash "
+                         "time and baked instead. When given, this value is baked verbatim "
+                         "as the wire id AND used to select the installed_cameras[] entry "
+                         "for fallback pose + zones.")
     ap.add_argument("--dest-ip",       default="169.254.1.56")
     ap.add_argument("--dest-port",     type=int, default=5556)
     ap.add_argument("--config-port",   type=int, default=5557,
@@ -454,7 +564,12 @@ def main() -> int:
     ap.add_argument("--confirm-flash", action="store_true",
                     help="Flash the baked pipeline. Without this flag, the "
                          "script dry-runs: builds, saves .dap, and exits.")
-    ap.add_argument("--oak-ip",        default="169.254.1.222")
+    ap.add_argument("--oak-ip",        default="169.254.1.222",
+                    help="Bootloader DISCOVERY ip (where to attach), NOT the IP we flash to.")
+    ap.add_argument("--oak-dhcp",      action="store_true",
+                    help="Bake the camera's OWN ip as DHCP so the hub assigns its reserved "
+                         "lease (fleet plug-in model). Without this the camera keeps its "
+                         "last-flashed static ip (currently 169.254.1.222).")
     ap.add_argument("--dap",           default=str(REPO / "pipeline" / "standalone" / "gridfront-scout-v2.dap"))
     ap.add_argument("--calib",         default=str(REPO / "calib_oak.json"),
                     help="Calibration JSON to embed (required — stereo crashes without it in standalone)")
@@ -506,20 +621,29 @@ def main() -> int:
         except Exception as e:
             logger.warning("could not apply desired confidence to model meta (%s).", e)
 
+    # Pose-selection key for the baked FALLBACK pose/zones (config.json
+    # installed_cameras[].id). When --camera-id is given the operator can point
+    # at a specific config entry; when deriving the serial there is no slot key,
+    # so pose falls back to empty (the P4/tablet pushes the real pose over :5557
+    # on boot regardless — see _extract_pose_and_zones).
+    pose_key = args.camera_id if args.camera_id else ""
     cfg_path = Path(args.config)
     if cfg_path.is_file():
         with open(cfg_path) as f:
             cfg = json.load(f)
-        pos_x, pos_y, yaw_deg, zones, machine_len_m, machine_wid_m = _extract_pose_and_zones(
-            cfg, args.camera_id,
+        pos_x, pos_y, yaw_deg, pitch_deg, zones, machine_len_m, machine_wid_m = _extract_pose_and_zones(
+            cfg, pose_key,
         )
+        if not pose_key:
+            logger.info("No --camera-id given: baking empty fallback pose "
+                        "(serial-keyed camera; tablet pushes pose on boot).")
         logger.info(
-            "Baking fallback from %s: pos=(%.2f, %.2f) yaw=%.1f° zones=%d footprint=%.1fx%.1fm",
-            cfg_path.name, pos_x, pos_y, yaw_deg, len(zones), machine_len_m, machine_wid_m,
+            "Baking fallback from %s: pos=(%.2f, %.2f) yaw=%.1f° pitch=%.1f° zones=%d footprint=%.1fx%.1fm",
+            cfg_path.name, pos_x, pos_y, yaw_deg, pitch_deg, len(zones), machine_len_m, machine_wid_m,
         )
     else:
         logger.warning("No config.json at %s — baking empty fallback (tablet must push on boot).", cfg_path)
-        pos_x, pos_y, yaw_deg, zones = 0.0, 0.0, 0.0, []
+        pos_x, pos_y, yaw_deg, pitch_deg, zones = 0.0, 0.0, 0.0, 0.0, []
         machine_len_m, machine_wid_m = 8.0, 2.5
 
     allow_classes: set[str] | None = None
@@ -532,19 +656,65 @@ def main() -> int:
     # to the P4/hub we send detections to — it is the LAN config authority.
     config_src_ip = args.config_src_ip if args.config_src_ip else args.dest_ip
 
-    logger.info("Building pipeline from blob %s (no device connection)...", blob.name)
+    # ── Resolve the baked camera identity ────────────────────────────────
+    # The wire/user-facing id is the GridFront SERIAL (last-6 of the OAK MXID),
+    # derived OFFLINE at flash time from the connected device. The full MXID is
+    # baked as a SEPARATE constant for logging/traceability only — it is never
+    # the user-facing id (no Luxonis/OAK/MXID branding leaks to the operator).
+    #
+    # ORDERING: the pipeline bakes __CAMERA_ID__ at build time, so to bake the
+    # DERIVED serial we must discover the device (read the MXID) BEFORE building.
+    # In dry-run (no --confirm-flash, no device) we fall back to the manual
+    # --camera-id, or a 'UNSET' placeholder — the .dap is just a sidecar.
+    camera_mxid = ""           # full MXID (logging only); empty in dry-run
+    if args.camera_id:
+        camera_id = args.camera_id          # manual override wins, baked verbatim
+        logger.info("Manual --camera-id override: baking id=%s", camera_id)
+    elif args.confirm_flash:
+        camera_id = None                    # derived from the device below
+    else:
+        camera_id = "UNSET"                 # dry-run placeholder (no device)
+        logger.info("Dry-run with no --camera-id: baking placeholder id=%s "
+                    "(the live flash derives the GridFront serial from the device).",
+                    camera_id)
+
+    # In the flash path we must discover the device + read its MXID BEFORE the
+    # pipeline is built (so the derived serial is what gets baked).
+    bl = None
+    if args.confirm_flash:
+        logger.warning("====================================================")
+        logger.warning("  Expecting OAK in BOOTLOADER state at %s.", args.oak_ip)
+        logger.warning("  If it's currently in SDK mode, power-cycle it now.")
+        logger.warning("  Waiting up to 120s (discovering MXID)...")
+        logger.warning("====================================================")
+        mxid, bl = _discover_oak_mxid(args.oak_ip, timeout_s=120.0)
+        if bl is None:
+            logger.error("OAK not discoverable/in BOOTLOADER at %s after 120s.", args.oak_ip)
+            return 1
+        camera_mxid = mxid or ""
+        if camera_id is None:                # derive the serial (no manual override)
+            camera_id = _serial_from_mxid(mxid)
+            logger.info("Derived GridFront serial: GF_SERIAL=%s (GF_MXID=%s)",
+                        camera_id, camera_mxid)
+            if not camera_id:
+                logger.error("Empty serial derived from MXID %r — aborting.", mxid)
+                return 1
+        else:
+            logger.info("Using manual id=%s on device GF_MXID=%s", camera_id, camera_mxid)
+
+    logger.info("Building pipeline from blob %s ...", blob.name)
     pipeline = build_pipeline(
         blob_path=blob, model_meta=meta,
         dest_ip=args.dest_ip, dest_port=args.dest_port, config_port=args.config_port,
-        camera_id=args.camera_id,
-        pos_x=pos_x, pos_y=pos_y, yaw_deg=yaw_deg, zones=zones,
+        camera_id=camera_id, camera_mxid=camera_mxid,
+        pos_x=pos_x, pos_y=pos_y, yaw_deg=yaw_deg, pitch_deg=pitch_deg, zones=zones,
         machine_len_m=machine_len_m, machine_wid_m=machine_wid_m,
         units=args.units, fps=args.fps, target_fps=args.target_fps,
         calib_json=calib, config_src_ip=config_src_ip, allow_classes=allow_classes,
     )
     logger.info("Pipeline ready. Detections→%s:%d, Config↔:%d (accept from %s), camera_id=%s",
                 args.dest_ip, args.dest_port, args.config_port,
-                config_src_ip or "ANY(allowlist off)", args.camera_id)
+                config_src_ip or "ANY(allowlist off)", camera_id)
     if resolved_model_id:
         logger.info("Baked perception (reflash lane): model_id=%s", resolved_model_id)
 
@@ -556,28 +726,6 @@ def main() -> int:
         logger.info("Dry-run — re-run with --confirm-flash to bake.")
         return 0
 
-    logger.warning("====================================================")
-    logger.warning("  Expecting OAK in BOOTLOADER state at %s.", args.oak_ip)
-    logger.warning("  If it's currently in SDK mode, power-cycle it now.")
-    logger.warning("  Waiting up to 120s...")
-    logger.warning("====================================================")
-
-    info = dai.DeviceInfo(args.oak_ip)
-    bl = None
-    deadline = time.time() + 120
-    tries = 0
-    while time.time() < deadline and bl is None:
-        tries += 1
-        try:
-            bl = dai.DeviceBootloader(info)
-            logger.info("Attached bootloader on try #%d", tries)
-        except Exception:
-            pass
-
-    if bl is None:
-        logger.error("OAK not in BOOTLOADER at %s after %d tries.", args.oak_ip, tries)
-        return 1
-
     try:
         logger.info("Flashing pipeline (compressed)...")
         progress = lambda pct: logger.info("flash progress: %.1f%%", pct * 100.0)
@@ -586,6 +734,19 @@ def main() -> int:
             logger.error("Flash failed: %s", msg)
             return 1
         logger.info("Flash complete. Power-cycle the camera to boot standalone.")
+        # Bake the camera's OWN-ip network config in the SAME bootloader session so it
+        # can live on the hub LAN (192.168.1.x) and reach dest-ip there. DHCP => the hub
+        # hands out the reserved .50 lease (matches the fleet plug-in model). Best-effort:
+        # the pipeline is already flashed, so a config hiccup doesn't lose the reflash.
+        if args.oak_dhcp:
+            try:
+                cfg = bl.readConfig()
+                cfg.setDynamicIPv4("0.0.0.0", "0.0.0.0", "0.0.0.0")
+                okc, msgc = bl.flashConfig(cfg)
+                logger.warning("Camera OWN-ip -> DHCP (flashConfig ok=%s msg=%s)", okc, msgc)
+            except Exception:
+                logger.exception("OWN-ip DHCP flashConfig FAILED (pipeline still flashed); "
+                                 "camera keeps its old static ip — rerun or set manually.")
         # E3: promote desired → active in firmware_intent now the reflash
         # landed (mirrors the tablet writing active_model post-reflash). Only
         # when an intent actually drove this build, and best-effort.

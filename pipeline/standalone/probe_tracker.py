@@ -62,7 +62,10 @@ def main() -> int:
         meta = json.load(f)
     with open(REPO / "config.json") as f:
         cfg = json.load(f)
-    pos_x, pos_y, yaw_deg, zones, mlen, mwid = _extract_pose_and_zones(cfg, "cam-0")
+    # BENCH-ONLY: probe_tracker runs the pipeline in HOST mode (no flash), so
+    # the baked id never reaches a production camera. "BENCH-PROBE" is a
+    # non-serial bench placeholder, NOT a GridFront serial.
+    pos_x, pos_y, yaw_deg, zones, mlen, mwid = _extract_pose_and_zones(cfg, "BENCH-PROBE")
 
     pipeline = build_pipeline(
         blob_path=REPO / "models/gridfront-scout-v1.blob",
@@ -70,7 +73,7 @@ def main() -> int:
         dest_ip="169.254.1.56",
         dest_port=5556,
         config_port=5557,
-        camera_id="cam-0",
+        camera_id="BENCH-PROBE",   # bench placeholder (host mode, never flashed)
         pos_x=pos_x, pos_y=pos_y, yaw_deg=yaw_deg, zones=zones,
         machine_len_m=mlen, machine_wid_m=mwid,
         units="m", fps=15, target_fps=10.0,
