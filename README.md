@@ -1,17 +1,137 @@
-# GridFront Detect
+# GridFront Scout
 
-Android kiosk app for the Oukitel RT3 Pro tablet.
-Displays a real-time radar view of detected persons around industrial equipment.
+GridFront Scout is the tablet kiosk + OAK-D standalone camera system for
+showing a live proximity radar around industrial equipment.
 
-## Architecture
+This branch, `oak-standalone`, is focused on the Oukitel RT3 Pro tablet and
+one or more OAK-D Pro W PoE cameras. The tablet is the operator interface and
+configuration source of truth. The OAK runs the perception pipeline on-device
+and sends compact detection packets to the tablet.
 
-- WebView-based app wrapping the radar web UI
-- Device Owner mode for kiosk lockdown
-- Connects to OAK-D camera detection pipeline via WiFi or receives data via BLE from Thingy:91 X
-- Uploads detection events to GridFront platform via SIM card (LTE) or WiFi
+## Current Scope
 
-## Target Device
+- Android kiosk app for Oukitel RT3 Pro, Android 14.
+- Full-screen WebView served from bundled assets at `http://127.0.0.1:8080/`.
+- OAK-D standalone firmware for neural detection, stereo depth, object
+  tracking, machine-frame transform, and zone classification.
+- Direct USB-C Ethernet link today:
+  - tablet `eth0`: `169.254.1.56`
+  - OAK: `169.254.1.222`
+- Wi-Fi debugging remains available because the tablet USB-C port is occupied
+  by the OAK/Ethernet chain.
 
-- Oukitel RT3 Pro
-- Android 14 (SDK 34)
-- 800x1280, 240dpi
+## Runtime Data Flow
+
+1. `MainActivity` starts the local tablet services.
+2. `EthernetProvisioner` configures tablet `eth0` for link-local OAK traffic.
+3. `ConfigStore` owns persisted machine, camera, zone, model, and rate config.
+4. `ConfigSync` listens on UDP `5557` and pushes current config to cameras.
+5. The OAK firmware receives config on UDP `5557`.
+6. The OAK sends detection JSON packets to the tablet on UDP `5556`.
+7. `UdpListener` stores the latest detection packet and fans out SSE updates.
+8. `LocalAssetServer` serves `assets/www/index.html` and local `/api/*`.
+9. The WebView renders the radar, settings UI, connection state, and controls.
+
+The important ports are:
+
+- `8080`: tablet-local HTTP server for the WebView and local API.
+- `5556`: OAK-to-tablet detection packets.
+- `5557`: bidirectional tablet/OAK config sync.
+- `5555`: optional ADB over Wi-Fi on the tablet.
+
+## Key Files
+
+- `android/app/src/main/java/io/gridfront/scout/MainActivity.kt`
+  starts the kiosk app, WebView, UDP listener, config sync, Ethernet
+  provisioning, and foreground service.
+- `android/app/src/main/java/io/gridfront/scout/LocalAssetServer.kt`
+  serves the WebView and owns the tablet-local `/api/*` surface.
+- `android/app/src/main/java/io/gridfront/scout/UdpListener.kt`
+  receives OAK detection packets on UDP `5556`.
+- `android/app/src/main/java/io/gridfront/scout/ConfigStore.kt`
+  stores tablet-owned machine, camera, zone, model, and runtime config.
+- `android/app/src/main/java/io/gridfront/scout/ConfigSync.kt`
+  sends config to OAK cameras and answers camera `config_request` packets.
+- `android/app/src/main/java/io/gridfront/scout/EthernetProvisioner.kt`
+  root-provisions the USB-C Ethernet interface for the direct OAK link.
+- `android/app/src/main/assets/www/index.html`
+  contains the current cab radar and settings UI.
+- `pipeline/standalone/build_standalone_v2.py`
+  builds or flashes the OAK standalone pipeline from local model assets.
+- `pipeline/standalone/script_runtime.py`
+  is the Script node source that runs on the OAK.
+- `docs/tablet-oak-roadmap.md`
+  tracks current rough edges and next work.
+
+## Common Commands
+
+Check that package, Android, and release-note versions agree:
+
+```powershell
+node scripts/check-version-sync.js
+```
+
+Build the Android debug APK:
+
+```powershell
+android\gradlew.bat -p android assembleDebug
+```
+
+Build a dry-run OAK `.dap` without flashing:
+
+```powershell
+.venv2x\Scripts\python.exe -m pipeline.standalone.build_standalone_v2 --dap temp\probe.dap
+```
+
+Flash the OAK after confirming the target and model:
+
+```powershell
+.venv2x\Scripts\python.exe -m pipeline.standalone.build_standalone_v2 --confirm-flash
+```
+
+Check tablet Wi-Fi ADB when available:
+
+```powershell
+C:\Users\helve\Android\Sdk\platform-tools\adb.exe devices -l
+```
+
+Query the running tablet app through ADB:
+
+```powershell
+C:\Users\helve\Android\Sdk\platform-tools\adb.exe -s 192.168.68.62:5555 shell "curl -s http://127.0.0.1:8080/api/camera/status"
+```
+
+## Versioning
+
+This repo follows the same humanized release-note model as
+`platform.gridfront.io`, adapted for the tablet/OAK app.
+
+- `package.json` is the canonical semantic version.
+- `android/app/build.gradle.kts` carries the Android `versionName` and
+  monotonically increasing `versionCode`.
+- `release-notes.json` is the version-history source of truth.
+- `scripts/bump-version.js` bumps semver, increments Android `versionCode`,
+  and promotes pending release notes into history.
+- `.github/workflows/release-on-master.yml` tags the first merged baseline as
+  `v0.1.0`; later pushes to `master` bump and tag automatically.
+
+For user-visible changes, edit `release-notes.json` before merging. See
+`docs/release-notes-style.md` for the writing guide.
+
+## Known Paper Cuts
+
+- `WebServerService` still polls the old Flask health endpoint at
+  `127.0.0.1:5555`; the current standalone tablet health is behind
+  `LocalAssetServer` on port `8080`.
+- The current WebView app is intentionally bundled as one large
+  `index.html`. It works, but future UI work should eventually split it into
+  smaller owned modules.
+- In-page keyboard reliability, app slowness profiling, boot branding, and
+  multi-camera polish are tracked in `docs/tablet-oak-roadmap.md`.
+
+## Local Artifacts
+
+Generated and machine-local artifacts are ignored, including virtualenvs,
+DepthAI caches, build outputs, logs, screenshots, `.dap` files, model blobs,
+and `temp/`. Avoid committing live tablet keys, generated probe files, or local
+debug screenshots.

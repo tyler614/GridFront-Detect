@@ -1,57 +1,55 @@
-"""
-Generate GridFront Detect Android boot animation.
-800x1280 portrait, white background, GridFront 3x3 grid logo + text.
-Part0: fade-in (30 frames, 1s)
-Part1: breathing pulse loop (60 frames, 2s)
-Output: bootanimation.zip (ZIP_STORED)
+"""GridFront Scout boot animation — unified boot experience on black.
+
+Design:
+  Black background. Official horizontal GridFront logo (9-square grid +
+  "GridFront" wordmark) centered. Thin progress bar below. First frame of
+  part0 equals the logo-partition image so bootlogo -> bootanim is seamless.
+
+Layout (800x1280 portrait):
+  Logo centered at ~42% vertical, scaled to ~65% width.
+  Progress bar at ~68% vertical, 55% width.
+
+Parts:
+  part0: 20 frames @ 30fps — fade-in from black (0.67s)
+  part1: 240 frames @ 30fps — static logo + progress bar sweep (8s, loops)
 """
 
 import os
-import math
 import zipfile
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 800, 1280
-BG = (0xF8, 0xF8, 0xF8)
+BG = (0, 0, 0)
 FPS = 30
 
-# Logo colors (left, center, right columns)
-COL_LEFT = (0x4A, 0x84, 0xBF)
 COL_CENTER = (0x3C, 0xAB, 0xD6)
-COL_RIGHT = (0x90, 0xD2, 0xE8)
+TEXT_WHITE = (0xFF, 0xFF, 0xFF)
+TEXT_DIM = (0x8A, 0x8A, 0x8A)
+BAR_TRACK = (0x2A, 0x2F, 0x34)
+BAR_FILL = COL_CENTER
 
-TEXT_DARK = (0x17, 0x17, 0x17)
-TEXT_LIGHT = (0x73, 0x73, 0x73)
+LOGO_SRC = r"G:/Shared drives/GridFront Internal/Branding/Gridfront_Logo.png"
+LOGO_WIDTH = int(W * 0.78)
+LOGO_CENTER_Y = int(H * 0.42)
 
-# Grid logo parameters
-GRID_COLS = [COL_LEFT, COL_CENTER, COL_RIGHT]
-GRID_ROWS = 3
-SQUARE_SIZE = 52
-SQUARE_GAP = 14
-SQUARE_RADIUS = 12
+BAR_Y = int(H * 0.68)
+BAR_W = int(W * 0.55)
+BAR_H = 6
+BAR_RADIUS = 3
+BAR_X = (W - BAR_W) // 2
+
+STATUS_TEXT = "Starting GridFront Scout"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def lerp_color(bg, fg, alpha):
-    """Blend fg over bg by alpha (0..1)."""
-    return tuple(int(b + (f - b) * alpha) for b, f in zip(bg, fg))
-
-
-def draw_rounded_rect(draw, xy, radius, fill):
-    """Draw a rounded rectangle."""
-    x0, y0, x1, y1 = xy
-    draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=fill)
-
-
-def get_font(size):
-    """Try to load a clean sans-serif font, fall back to default."""
-    font_paths = [
-        "C:/Windows/Fonts/segoeui.ttf",
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/calibri.ttf",
-    ]
-    for fp in font_paths:
+def get_font(size, bold=False):
+    paths = (
+        ["C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf"]
+        if bold
+        else ["C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.ttf"]
+    )
+    for fp in paths:
         if os.path.exists(fp):
             try:
                 return ImageFont.truetype(fp, size)
@@ -60,135 +58,140 @@ def get_font(size):
     return ImageFont.load_default()
 
 
-def get_bold_font(size):
-    """Try to load a bold sans-serif font."""
-    font_paths = [
-        "C:/Windows/Fonts/segoeuib.ttf",
-        "C:/Windows/Fonts/arialbd.ttf",
-        "C:/Windows/Fonts/calibrib.ttf",
-    ]
-    for fp in font_paths:
-        if os.path.exists(fp):
-            try:
-                return ImageFont.truetype(fp, size)
-            except Exception:
+def load_logo_white_text():
+    """Load the brand logo and swap the dark-navy wordmark for white.
+
+    The official PNG has transparent bg, blue grid squares, and dark-navy
+    "GridFront" text. On a black canvas the navy is invisible — recolor
+    any dark pixels (luminance < 0.35) to white while preserving blues
+    and alpha.
+    """
+    src = Image.open(LOGO_SRC).convert("RGBA")
+    pixels = src.load()
+    for y in range(src.height):
+        for x in range(src.width):
+            r, g, b, a = pixels[x, y]
+            if a == 0:
                 continue
-    return get_font(size)
+            # Perceptual luminance; navy text is ~0.15, light blue squares ~0.7
+            lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+            if lum < 0.35:
+                pixels[x, y] = (255, 255, 255, a)
+    scale = LOGO_WIDTH / src.width
+    new_size = (LOGO_WIDTH, int(src.height * scale))
+    return src.resize(new_size, Image.LANCZOS)
 
 
-def draw_frame(alpha=1.0, scale=1.0):
-    """
-    Draw one frame of the boot animation.
-    alpha: overall opacity (0..1) for fade-in
-    scale: scale factor for breathing pulse (0.95..1.05 range)
-    """
-    img = Image.new("RGB", (W, H), BG)
-    draw = ImageDraw.Draw(img)
+LOGO_RECOLORED = load_logo_white_text()
 
-    # --- Grid Logo ---
-    grid_w = GRID_ROWS * SQUARE_SIZE + (GRID_ROWS - 1) * SQUARE_GAP
-    grid_h = grid_w  # 3x3 square grid
-    # Position grid centered, slightly above vertical center
-    logo_center_y = H * 0.42
 
-    scaled_sq = int(SQUARE_SIZE * scale)
-    scaled_gap = int(SQUARE_GAP * scale)
-    scaled_grid_w = GRID_ROWS * scaled_sq + (GRID_ROWS - 1) * scaled_gap
-    scaled_grid_h = scaled_grid_w
+def apply_alpha(img, alpha):
+    if alpha >= 1.0:
+        return img
+    base = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    return Image.blend(base, img, alpha)
 
-    grid_x0 = (W - scaled_grid_w) // 2
-    grid_y0 = int(logo_center_y - scaled_grid_h // 2)
 
-    for row in range(GRID_ROWS):
-        for col in range(GRID_ROWS):
-            base_color = GRID_COLS[col]
-            color = lerp_color(BG, base_color, alpha)
-            x = grid_x0 + col * (scaled_sq + scaled_gap)
-            y = grid_y0 + row * (scaled_sq + scaled_gap)
-            r = int(SQUARE_RADIUS * scale)
-            draw_rounded_rect(draw, (x, y, x + scaled_sq, y + scaled_sq), r, color)
+def draw_logo(canvas, alpha=1.0):
+    logo = apply_alpha(LOGO_RECOLORED, alpha)
+    x = (W - logo.width) // 2
+    y = LOGO_CENTER_Y - logo.height // 2
+    canvas.alpha_composite(logo, (x, y))
 
-    # --- Text ---
-    font_gf = get_bold_font(int(48 * scale))
-    font_detect = get_font(int(36 * scale))
 
-    gf_color = lerp_color(BG, TEXT_DARK, alpha)
-    det_color = lerp_color(BG, TEXT_LIGHT, alpha)
+def draw_progress_bar(canvas, progress, alpha=1.0):
+    overlay = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
 
-    # "GridFront" text
-    text_y = grid_y0 + scaled_grid_h + int(36 * scale)
-    gf_text = "GridFront"
-    gf_bbox = draw.textbbox((0, 0), gf_text, font=font_gf)
-    gf_w = gf_bbox[2] - gf_bbox[0]
-    gf_x = (W - gf_w) // 2
-    draw.text((gf_x, text_y), gf_text, fill=gf_color, font=font_gf)
+    a = int(255 * alpha)
+    track_c = BAR_TRACK + (a,)
+    fill_c = BAR_FILL + (a,)
 
-    # "Detect" text below
-    det_y = text_y + (gf_bbox[3] - gf_bbox[1]) + int(8 * scale)
-    det_text = "Detect"
-    det_bbox = draw.textbbox((0, 0), det_text, font=font_detect)
-    det_w = det_bbox[2] - det_bbox[0]
-    det_x = (W - det_w) // 2
-    draw.text((det_x, det_y), det_text, fill=det_color, font=font_detect)
+    draw.rounded_rectangle(
+        [BAR_X, BAR_Y, BAR_X + BAR_W, BAR_Y + BAR_H],
+        radius=BAR_RADIUS,
+        fill=track_c,
+    )
+    fill_w = max(BAR_H, int(BAR_W * progress)) if progress > 0 else 0
+    if fill_w > 0:
+        draw.rounded_rectangle(
+            [BAR_X, BAR_Y, BAR_X + fill_w, BAR_Y + BAR_H],
+            radius=BAR_RADIUS,
+            fill=fill_c,
+        )
 
-    return img
+    font_status = get_font(22)
+    status_c = TEXT_DIM + (a,)
+    bb = draw.textbbox((0, 0), STATUS_TEXT, font=font_status)
+    tx = (W - (bb[2] - bb[0])) // 2
+    ty = BAR_Y + BAR_H + 24
+    draw.text((tx, ty), STATUS_TEXT, fill=status_c, font=font_status)
+
+    canvas.alpha_composite(overlay)
+
+
+def draw_frame(alpha=1.0, progress=0.0):
+    canvas = Image.new("RGBA", (W, H), BG + (255,))
+    draw_logo(canvas, alpha=alpha)
+    draw_progress_bar(canvas, progress=progress, alpha=alpha)
+    return canvas.convert("RGB")
 
 
 def ease_in_out(t):
-    """Smooth ease-in-out curve."""
     return t * t * (3.0 - 2.0 * t)
 
 
 def generate():
     part0_dir = os.path.join(BASE_DIR, "part0")
     part1_dir = os.path.join(BASE_DIR, "part1")
-    os.makedirs(part0_dir, exist_ok=True)
-    os.makedirs(part1_dir, exist_ok=True)
 
-    # Part 0: Fade in (30 frames)
-    num_fade = 30
-    print(f"Generating part0 ({num_fade} frames)...")
+    for d in (part0_dir, part1_dir):
+        if os.path.isdir(d):
+            for f in os.listdir(d):
+                if f.endswith(".png"):
+                    os.remove(os.path.join(d, f))
+        os.makedirs(d, exist_ok=True)
+
+    num_fade = 20
+    print(f"part0: {num_fade} frames (fade-in)")
     for i in range(num_fade):
         t = i / (num_fade - 1)
         alpha = ease_in_out(t)
-        img = draw_frame(alpha=alpha, scale=1.0)
-        img.save(os.path.join(part0_dir, f"{i:05d}.png"), "PNG")
+        draw_frame(alpha=alpha, progress=0.0).save(
+            os.path.join(part0_dir, f"{i:05d}.png"), "PNG"
+        )
 
-    # Part 1: Breathing pulse loop (60 frames)
-    num_pulse = 60
-    print(f"Generating part1 ({num_pulse} frames)...")
-    for i in range(num_pulse):
-        t = i / num_pulse  # 0..1 over the loop
-        # Sine-based breathing: scale oscillates between 0.97 and 1.03
-        breath = math.sin(t * 2 * math.pi)
-        scale = 1.0 + 0.03 * breath
-        # Also subtle alpha pulse between 0.85 and 1.0
-        alpha = 0.925 + 0.075 * breath
-        img = draw_frame(alpha=alpha, scale=scale)
-        img.save(os.path.join(part1_dir, f"{i:05d}.png"), "PNG")
+    num_loop = 240
+    print(f"part1: {num_loop} frames (progress sweep)")
+    for i in range(num_loop):
+        p = i / (num_loop - 1)
+        p_eased = ease_in_out(p)
+        draw_frame(alpha=1.0, progress=p_eased).save(
+            os.path.join(part1_dir, f"{i:05d}.png"), "PNG"
+        )
 
-    # desc.txt
+    final = draw_frame(alpha=1.0, progress=0.0)
+    final.save(os.path.join(BASE_DIR, "bootlogo.png"), "PNG")
+    print("saved bootlogo.png (logo-partition source image)")
+
     desc_path = os.path.join(BASE_DIR, "desc.txt")
     with open(desc_path, "w", newline="\n") as f:
         f.write(f"{W} {H} {FPS}\n")
         f.write("p 1 0 part0\n")
         f.write("p 0 0 part1\n")
-    print("Wrote desc.txt")
 
-    # Package as bootanimation.zip (ZIP_STORED — critical for Android)
     zip_path = os.path.join(BASE_DIR, "bootanimation.zip")
-    print(f"Creating {zip_path}...")
+    print(f"packing {zip_path}...")
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_STORED) as zf:
         zf.write(desc_path, "desc.txt")
-        for folder in ["part0", "part1"]:
-            folder_path = os.path.join(BASE_DIR, folder)
-            files = sorted(os.listdir(folder_path))
-            for fname in files:
-                fpath = os.path.join(folder_path, fname)
-                zf.write(fpath, f"{folder}/{fname}")
+        for folder in ("part0", "part1"):
+            for fname in sorted(os.listdir(os.path.join(BASE_DIR, folder))):
+                zf.write(
+                    os.path.join(BASE_DIR, folder, fname), f"{folder}/{fname}"
+                )
 
-    zip_size = os.path.getsize(zip_path)
-    print(f"Done! bootanimation.zip = {zip_size / 1024 / 1024:.1f} MB")
+    size = os.path.getsize(zip_path)
+    print(f"done — {size / 1024 / 1024:.2f} MB")
 
 
 if __name__ == "__main__":

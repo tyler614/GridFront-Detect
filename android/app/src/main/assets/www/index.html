@@ -2,85 +2,3581 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0A0A0A">
-<title>GridFront Detect</title>
-<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-<script>window.onerror=function(m,s,l,c,e){document.body.innerHTML='<pre style="color:red;padding:20px;font-size:14px">ERROR: '+m+'\nLine: '+l+'\nCol: '+c+'\n'+(e&&e.stack||'')+'</pre>';}</script>
+<title>GridFront Scout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #0A0A0A; color: #F2F2F2; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
-  #hud { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(18,18,18,0.95); border-top: 1px solid #262626; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); padding: 10px 16px; font-size: 14px; color: #F2F2F2; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding-bottom: max(10px, env(safe-area-inset-bottom)); z-index: 10; }
-  .hud-item { display: flex; flex-direction: column; gap: 2px; }
-  .hud-item .label { font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: #666; }
-  .hud-item .value { font-weight: 700; font-size: 18px; color: #F2F2F2; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
-  .dot-green { background: #22c55e; }
-  .dot-red { background: #EF4444; animation: pulse 1s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  #header { position: fixed; top: 0; left: 0; right: 0; background: rgba(18,18,18,0.95); border-bottom: 1px solid #262626; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); padding: 10px 16px; display: flex; align-items: center; gap: 10px; z-index: 10; padding-top: max(10px, env(safe-area-inset-top)); }
-  #header .title { font-weight: 700; font-size: 17px; color: #F2F2F2; }
-  #header .subtitle { font-size: 12px; color: #A6A6A6; }
-  #alert-banner { position: fixed; top: 60px; left: 12px; right: 12px; background: rgba(220,38,38,0.95); border-radius: 10px; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); padding: 12px 16px; font-size: 16px; font-weight: 700; color: #FFFFFF; display: none; z-index: 10; text-align: center; box-shadow: 0 4px 24px rgba(220,38,38,0.4); }
-  #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; gap: 16px; z-index: 100; }
-  #loading .spinner { width: 36px; height: 36px; border: 3px solid #262626; border-top-color: #4A84BF; border-radius: 50%; animation: spin 0.8s linear infinite; }
-  #loading .loading-text { font: 14px system-ui, -apple-system, sans-serif; color: #A6A6A6; letter-spacing: 0.5px; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+    /* ── GridFront platform design tokens ──────────────
+       Mirrors platform.gridfront.io (Next.js + Tailwind +
+       shadcn/ui). HSL values here match the platform's
+       :root dark theme so this app feels native to the
+       rest of the product line. */
+    :root {
+        --background: 0 0% 7%;        /* #121212 */
+        --foreground: 0 0% 95%;       /* #F2F2F0 */
+        --card: 0 0% 10%;             /* #1A1A18 */
+        --card-foreground: 0 0% 95%;
+        --popover: 0 0% 10%;
+        --popover-foreground: 0 0% 95%;
+        --primary: 0 0% 95%;          /* #F2F2F0 */
+        --primary-foreground: 0 0% 9%;
+        --secondary: 0 0% 15%;
+        --secondary-foreground: 0 0% 95%;
+        --muted: 0 0% 15%;
+        --muted-foreground: 0 0% 60%;
+        --accent: 0 0% 18%;
+        --accent-foreground: 0 0% 95%;
+        --destructive: 0 70% 55%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 20%;           /* #333330 */
+        --input: 0 0% 20%;
+        --ring: 0 0% 60%;
+        --navbar: 0 0% 12%;           /* #1F1F1C */
+        --radius: 0.5rem;
+        --success: 142 71% 45%;
+        --warning: 25 95% 53%;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+        height: 100%; overflow: hidden;
+        background: hsl(var(--background)); color: hsl(var(--foreground));
+        font-family: 'Roboto', -apple-system, system-ui, sans-serif;
+        font-feature-settings: 'kern';
+        -webkit-font-smoothing: antialiased;
+        -webkit-user-select: none; user-select: none;
+    }
+    .app {
+        display: flex; flex-direction: column;
+        height: 100vh; height: 100dvh;
+    }
+
+    /* ── Status bar ─────────────────────────────────── */
+    /* Hidden by default — the cab view stays bare so the detection radar
+       owns the screen. Settings access moves to a floating gear button,
+       and the live state (zone, nearest, connection) is overlaid directly
+       on the radar via .radar-overlay-* below. The bar still exists in
+       the DOM because some legacy code writes to #hud-fps / #hud-count
+       for diagnostics, and we don't want those writes to throw. */
+    .status-bar { display: none; }
+    .status-bar.bar-visible {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 8px 16px;
+        background: hsl(var(--navbar));
+        border-bottom: 1px solid hsl(var(--border));
+        flex-shrink: 0; min-height: 44px;
+    }
+    .status-left { display: flex; align-items: center; gap: 10px; }
+    .status-logo {
+        font-size: 14px; font-weight: 700; letter-spacing: -0.01em;
+        color: hsl(var(--foreground));
+    }
+    .status-logo span { color: hsl(var(--muted-foreground)); font-weight: 400; }
+    .status-pill {
+        display: flex; align-items: center; gap: 6px;
+        padding: 3px 10px; border-radius: calc(var(--radius) - 2px);
+        font-size: 11px; font-weight: 600; letter-spacing: 0.01em;
+    }
+    .pill-live { background: hsla(0, 0%, 100%, 0.08); color: hsl(var(--foreground)); border: 1px solid hsla(0, 0%, 100%, 0.15); }
+    .pill-danger { background: hsla(0, 70%, 55%, 0.18); color: hsl(0 84% 72%); border: 1px solid hsla(0, 70%, 55%, 0.35); animation: pulse 0.8s ease-in-out infinite alternate; }
+    .pill-warning { background: hsla(25, 95%, 53%, 0.18); color: hsl(25 95% 65%); border: 1px solid hsla(25, 95%, 53%, 0.35); }
+    .pill-clear { background: hsla(0, 0%, 100%, 0.06); color: hsl(var(--muted-foreground)); border: 1px solid hsla(0, 0%, 100%, 0.12); }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    @keyframes pulse { from { opacity: 1; } to { opacity: 0.4; } }
+    @keyframes gf-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.85); } }
+
+    .status-right { display: flex; align-items: center; gap: 12px; font-size: 11px; color: hsl(var(--muted-foreground)); }
+    .stat { display: flex; align-items: center; gap: 4px; }
+    .stat b { color: hsl(var(--foreground)); font-weight: 600; }
+    .btn-icon {
+        background: none; border: none; cursor: pointer;
+        color: hsl(var(--muted-foreground));
+        padding: 8px; display: flex; align-items: center; justify-content: center;
+        border-radius: calc(var(--radius) - 2px);
+        min-width: 36px; min-height: 36px;
+        flex-shrink: 0;
+        transition: color 0.15s, background 0.15s;
+    }
+    .btn-icon:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+    .btn-icon svg { width: 18px; height: 18px; }
+
+    /* Narrow viewports (tablet in portrait, phones) — drop the FPS
+       stats so the gear button can't be pushed off-screen. The nearest-
+       object stat is kept because it's the main at-a-glance number. */
+    @media (max-width: 800px) {
+        .status-bar { padding: 8px 10px; }
+        .status-right { gap: 8px; }
+        .status-right .stat[data-collapse="1"] { display: none; }
+    }
+
+    /* ── Panels ──────────────────────────────────────── */
+    /* Single fullscreen panel — the cab-display radar. Everything else
+       (livestream, 3D spatial view) was removed when OAK-D became the
+       compute node and the tablet became a pure renderer. */
+    .panels {
+        flex: 1;
+        display: flex;
+        flex-direction: row;
+        min-height: 0;
+        overflow: hidden;
+    }
+    .cab-panel {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+    }
+    .panel-label {
+        position: absolute; top: 8px; left: 10px;
+        font-size: 11px; font-weight: 600; color: #888;
+        background: rgba(0,0,0,0.6); padding: 2px 8px;
+        border-radius: 4px; letter-spacing: 0.5px; z-index: 2;
+    }
+
+    /* ── Cab display mockup ─────────────────────────── */
+    /* Physical target: MaTouch ESP32-S3 1.8" round AMOLED (FT3168).
+       The panel centers a circular OLED-style mockup that we'll drive
+       with the same detection stream the spatial view uses. */
+    .cab-panel {
+        background: #000;
+        display: flex; align-items: center; justify-content: center;
+    }
+    .cab-panel .cab-display-frame { width: min(82%, 640px); }
+    .cab-display-frame {
+        position: relative;
+        width: min(78%, 380px);
+        aspect-ratio: 1 / 1;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, #1a1a1a 0%, #060606 55%, #000 100%);
+        box-shadow:
+            0 0 0 6px #1a1a1a,      /* inner bezel */
+            0 0 0 8px #2a2a2a,      /* outer bezel */
+            0 0 0 14px #0d0d0d,     /* PCB edge */
+            0 18px 38px rgba(0,0,0,0.8),
+            inset 0 0 30px rgba(255,255,255,0.03);
+    }
+    .cab-display-frame::before {
+        /* Subtle glass reflection */
+        content: '';
+        position: absolute;
+        inset: 4%;
+        border-radius: 50%;
+        background: linear-gradient(155deg,
+            rgba(255,255,255,0.08) 0%,
+            rgba(255,255,255,0.02) 30%,
+            transparent 55%);
+        pointer-events: none;
+        z-index: 3;
+    }
+    .cab-display-svg {
+        position: absolute; inset: 4%;
+        width: 92%; height: 92%;
+        border-radius: 50%;
+        background: #000;
+        z-index: 1;
+    }
+    /* Cab background pulse — applied to #cab-bg-disc by JS when a tracked
+       person is inside a danger or warning zone. Danger pulses faster and
+       harder; warning is calmer so the contrast still tells the operator
+       which one they're looking at. SVG fill animates via CSS. */
+    @keyframes cab-pulse-danger {
+        0%, 100% { fill: #7f1d1d; }
+        50%      { fill: #ef4444; }
+    }
+    @keyframes cab-pulse-warn {
+        0%, 100% { fill: #78350f; }
+        50%      { fill: #f59e0b; }
+    }
+    #cab-bg-disc.cab-bg-danger {
+        animation: cab-pulse-danger 0.7s ease-in-out infinite;
+    }
+    #cab-bg-disc.cab-bg-warn {
+        animation: cab-pulse-warn 1.2s ease-in-out infinite;
+    }
+    .cab-spec-label {
+        position: absolute; bottom: 14px; left: 0; right: 0;
+        text-align: center; font-size: 10px; color: #555;
+        letter-spacing: 1px; text-transform: uppercase;
+    }
+
+    /* ── Cab overlays ────────────────────────────────
+       With the top bar gone the cab view shows only the radar plus a
+       few overlays that surface critical state. Each overlay starts
+       hidden and reveals itself only when the state warrants attention,
+       so the screen stays quiet during normal operation. */
+    .overlay-zone {
+        position: absolute; left: 50%; top: 4%;
+        transform: translateX(-50%);
+        padding: 6px 14px; border-radius: 8px;
+        font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
+        z-index: 4; pointer-events: none;
+        display: none;
+    }
+    .overlay-zone.show { display: block; }
+    .overlay-zone.show-warning {
+        background: hsla(25, 95%, 53%, 0.20);
+        color: hsl(25 95% 70%);
+        border: 1px solid hsla(25, 95%, 53%, 0.45);
+    }
+    .overlay-zone.show-danger {
+        background: hsla(0, 70%, 55%, 0.22);
+        color: hsl(0 84% 78%);
+        border: 1px solid hsla(0, 70%, 55%, 0.50);
+        animation: pulse 0.8s ease-in-out infinite alternate;
+    }
+
+    .overlay-nearest {
+        position: absolute; left: 50%; bottom: 4%;
+        transform: translateX(-50%);
+        padding: 5px 12px; border-radius: 6px;
+        background: rgba(0,0,0,0.55);
+        border: 1px solid rgba(255,255,255,0.10);
+        color: hsl(var(--foreground));
+        font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+        z-index: 4; pointer-events: none;
+        display: none;
+        backdrop-filter: blur(4px);
+    }
+    .overlay-nearest.show { display: block; }
+    .overlay-nearest .nearest-label {
+        color: hsl(var(--muted-foreground));
+        margin-right: 6px; font-weight: 500;
+    }
+
+    .overlay-conn {
+        position: fixed; top: 14px; right: 14px; z-index: 50;
+        padding: 6px 12px; border-radius: 8px;
+        font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+        backdrop-filter: blur(6px);
+        display: none;
+    }
+    .overlay-conn.show { display: flex; align-items: center; gap: 6px; }
+    .overlay-conn.pill-conn-wait {
+        background: rgba(0,0,0,0.55);
+        color: hsl(var(--muted-foreground));
+        border: 1px solid rgba(255,255,255,0.12);
+    }
+    .overlay-conn.pill-conn-err {
+        background: hsla(0, 70%, 55%, 0.22);
+        color: hsl(0 84% 78%);
+        border: 1px solid hsla(0, 70%, 55%, 0.50);
+    }
+
+    /* ── Settings overlay (platform-styled, LIGHT THEME) ─
+       The main scout app stays dark (in-cab readability),
+       but the settings screen flips to platform's light
+       theme so it matches platform.gridfront.io exactly.
+       Light tokens are scoped here so the rest of the app
+       is unaffected. */
+    .settings-overlay {
+        --background: 0 0% 100%;
+        --foreground: 0 0% 3.9%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 3.9%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 3.9%;
+        --primary: 0 0% 9%;
+        --primary-foreground: 0 0% 98%;
+        --secondary: 0 0% 96.1%;
+        --secondary-foreground: 0 0% 9%;
+        --muted: 0 0% 96.1%;
+        --muted-foreground: 0 0% 45.1%;
+        --accent: 0 0% 96.1%;
+        --accent-foreground: 0 0% 9%;
+        --destructive: 0 84% 60%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 89.8%;
+        --input: 0 0% 89.8%;
+        --ring: 0 0% 63%;
+        --navbar: 0 0% 100%;
+        --warning: 25 95% 53%;
+        --success: 142 71% 45%;
+
+        /* Full-screen sheet. On a kiosk there is no "behind" — this IS
+           the settings page. No backdrop blur, no dimming, no popup feel. */
+        display: none; position: fixed; inset: 0;
+        background: hsl(var(--background));
+        z-index: 600;
+        color: hsl(var(--foreground));
+        /* The header+tabs are sticky via the container; only the body scrolls. */
+        overflow: hidden;
+        flex-direction: column;
+    }
+    .settings-overlay.open { display: flex; }
+    .settings-container {
+        /* Fullscreen — no margin, no border, no rounded, no shadow. */
+        flex: 1 1 auto; min-height: 0;
+        background: hsl(var(--background));
+        display: flex; flex-direction: column;
+    }
+    .settings-header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 14px 18px 12px;
+        background: hsl(var(--background));
+        border-bottom: 1px solid hsl(var(--border));
+        flex: 0 0 auto;
+    }
+    .settings-header h1 {
+        font-size: 20px; font-weight: 700;
+        letter-spacing: -0.02em;
+        color: hsl(var(--foreground));
+    }
+    .settings-header .settings-subtitle {
+        display: block; font-size: 12px; font-weight: 400;
+        color: hsl(var(--muted-foreground));
+        margin-top: 1px; letter-spacing: 0;
+    }
+    .btn-close {
+        background: transparent;
+        border: 1px solid hsl(var(--border));
+        cursor: pointer;
+        color: hsl(var(--muted-foreground));
+        width: 40px; height: 40px;
+        border-radius: calc(var(--radius) - 2px);
+        display: flex; align-items: center; justify-content: center;
+        transition: color 0.15s, background 0.15s, border-color 0.15s;
+        flex: 0 0 auto;
+    }
+    .btn-close:hover {
+        color: hsl(var(--foreground));
+        background: hsl(var(--accent));
+        border-color: hsl(var(--ring));
+    }
+    .btn-close svg { width: 18px; height: 18px; }
+
+    /* Tab strip — matches shadcn/ui Tabs on platform.
+       Pill container with the active tab lifted on a
+       white card + shadow. */
+    .settings-tabs {
+        display: flex;
+        gap: 3px;
+        padding: 3px;
+        margin: 10px 14px 0;
+        background: hsl(var(--muted));
+        border-radius: var(--radius);
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        flex: 0 0 auto;
+    }
+    .settings-tabs::-webkit-scrollbar { display: none; }
+    .settings-tab {
+        flex: 1 1 auto;
+        min-width: max-content;
+        padding: 7px 12px;
+        border: none;
+        background: transparent;
+        color: hsl(var(--muted-foreground));
+        font-size: 12px; font-weight: 500;
+        font-family: inherit;
+        border-radius: calc(var(--radius) - 2px);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: color 0.15s, background 0.15s, box-shadow 0.15s;
+        letter-spacing: -0.01em;
+    }
+    .settings-tab:hover { color: hsl(var(--foreground)); }
+    .settings-tab.active {
+        background: hsl(var(--background));
+        color: hsl(var(--foreground));
+        font-weight: 600;
+        box-shadow: 0 1px 2px hsla(0, 0%, 0%, 0.08);
+    }
+
+    .settings-body {
+        padding: 14px 14px 24px;
+        flex: 1 1 auto; min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Each settings block is a Card — matches platform's
+       shadcn Card (bg-card, rounded-lg, border). */
+    .settings-section {
+        margin-bottom: 12px;
+        background: hsl(var(--card));
+        border: 1px solid hsl(var(--border));
+        border-radius: var(--radius);
+        padding: 14px 14px 12px;
+    }
+    .tab-panel > .settings-section:last-child { margin-bottom: 0; }
+    .settings-section h2 {
+        font-size: 15px; font-weight: 600;
+        color: hsl(var(--foreground));
+        letter-spacing: -0.01em; margin-bottom: 3px;
+        text-transform: none;
+    }
+    .settings-section p {
+        font-size: 12.5px;
+        color: hsl(var(--muted-foreground));
+        margin-bottom: 12px; line-height: 1.45;
+    }
+
+    /* Inline notice block (model picker v2 banner, etc.) */
+    .settings-section .gf-notice {
+        border: 1px solid hsl(var(--border));
+        border-radius: calc(var(--radius) - 2px);
+        padding: 10px 12px;
+        margin-bottom: 12px;
+        background: hsl(var(--muted) / 0.5);
+    }
+    .settings-section .gf-notice-title {
+        font-size: 12px; font-weight: 600;
+        letter-spacing: 0.04em; text-transform: uppercase;
+        color: hsl(var(--warning));
+        margin-bottom: 4px;
+    }
+    .settings-section .gf-notice-body {
+        font-size: 12.5px; line-height: 1.45;
+        color: hsl(var(--muted-foreground));
+    }
+    .settings-section .gf-notice-v2 {
+        border-color: hsl(var(--warning) / 0.5);
+        background: hsl(var(--warning) / 0.08);
+    }
+
+    /* ── Form primitives — match platform's Input/Select/
+       Button variants exactly: 2px border, --radius, 44px
+       min touch target on mobile. */
+    .settings-section .gf-field { margin-bottom: 14px; }
+    .settings-section .gf-field:last-child { margin-bottom: 0; }
+    .settings-section .gf-label {
+        display: block; font-size: 13px;
+        color: hsl(var(--foreground));
+        margin-bottom: 8px; font-weight: 500;
+        letter-spacing: -0.01em;
+    }
+    .settings-section .gf-hint {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+        margin-top: 6px; line-height: 1.4;
+    }
+    .settings-section .gf-input,
+    .settings-section .gf-select {
+        width: 100%;
+        min-height: 44px;
+        padding: 10px 14px;
+        background: hsl(var(--background));
+        border: 2px solid hsl(var(--border));
+        border-radius: calc(var(--radius) - 2px);
+        color: hsl(var(--foreground));
+        font-size: 14px; font-family: inherit;
+        font-weight: 400;
+        box-sizing: border-box;
+        transition: border-color 0.15s, background 0.15s;
+        caret-color: hsl(var(--foreground));
+    }
+    /* Theme the typing caret + selection highlight on every input/textarea
+       (not just .gf-input — covers wifi password, model search, etc). */
+    input, textarea { caret-color: hsl(var(--foreground)); }
+    input::selection, textarea::selection {
+        background: hsl(var(--foreground) / 0.22);
+        color: hsl(var(--foreground));
+    }
+    .settings-section .gf-input::placeholder { color: hsl(var(--muted-foreground)); }
+    .settings-section .gf-input:hover,
+    .settings-section .gf-select:hover { border-color: hsl(var(--ring)); }
+    .settings-section .gf-input:focus,
+    .settings-section .gf-select:focus {
+        outline: none;
+        border-color: hsl(var(--primary));
+        box-shadow: 0 0 0 3px hsla(0, 0%, 95%, 0.08);
+    }
+    .settings-section .gf-select {
+        appearance: none; -webkit-appearance: none;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+        background-repeat: no-repeat;
+        background-position: right 14px center;
+        padding-right: 36px;
+    }
+    .settings-section .gf-row { display: flex; gap: 10px; }
+    .settings-section .gf-row > * { flex: 1; min-width: 0; }
+    .settings-section .gf-btn {
+        min-height: 44px;
+        padding: 10px 18px;
+        border-radius: calc(var(--radius) - 2px);
+        border: 2px solid hsl(var(--border));
+        background: hsl(var(--card));
+        color: hsl(var(--foreground));
+        font-size: 14px; font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .settings-section .gf-btn:hover {
+        background: hsl(var(--accent));
+        border-color: hsl(var(--ring));
+    }
+    .settings-section .gf-btn-primary {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-color: hsl(var(--primary));
+        font-weight: 600;
+    }
+    .settings-section .gf-btn-primary:hover {
+        background: hsl(0 0% 88%);
+        border-color: hsl(0 0% 88%);
+    }
+    .settings-section .gf-btn-danger {
+        color: hsl(var(--destructive));
+        border-color: hsl(var(--destructive) / 0.4);
+        background: hsl(var(--destructive) / 0.08);
+    }
+    .settings-section .gf-btn-danger:hover {
+        background: hsl(var(--destructive) / 0.15);
+        border-color: hsl(var(--destructive));
+    }
+    .settings-section .gf-kv {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 16px;
+        padding: 12px 0;
+        border-bottom: 1px solid hsl(var(--border));
+    }
+    .settings-section .gf-kv:first-child { padding-top: 0; }
+    .settings-section .gf-kv:last-child { border-bottom: none; padding-bottom: 0; }
+    .settings-section .gf-kv-label { font-size: 14px; color: hsl(var(--foreground)); font-weight: 500; }
+    .settings-section .gf-kv-sub { font-size: 12px; color: hsl(var(--muted-foreground)); margin-top: 2px; font-weight: 400; }
+    .settings-section .gf-kv select { min-width: 140px; }
+
+    /* Wi-Fi scan list */
+    .gf-wifi-list {
+        border: 1px solid hsl(var(--border));
+        border-radius: 8px;
+        background: hsl(var(--background));
+        max-height: 280px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .gf-wifi-empty {
+        padding: 14px;
+        text-align: center;
+        color: hsl(var(--muted-foreground));
+        font-size: 13px;
+    }
+    .gf-wifi-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid hsl(var(--border));
+        cursor: pointer;
+        transition: background 0.12s;
+    }
+    .gf-wifi-row:last-child { border-bottom: none; }
+    .gf-wifi-row:hover, .gf-wifi-row:active { background: hsl(var(--muted)); }
+    .gf-wifi-row.selected { background: hsl(var(--muted)); }
+    .gf-wifi-ssid {
+        flex: 1;
+        font-size: 14px;
+        color: hsl(var(--foreground));
+        font-weight: 500;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .gf-wifi-meta {
+        display: flex; align-items: center; gap: 8px;
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+    }
+    .gf-wifi-bars {
+        display: inline-flex; align-items: flex-end; gap: 2px;
+        height: 16px;
+    }
+    .gf-wifi-bars span {
+        display: inline-block;
+        width: 3px;
+        background: hsl(var(--muted-foreground));
+        border-radius: 1px;
+        opacity: 0.25;
+    }
+    .gf-wifi-bars span.on { opacity: 1; background: hsl(var(--foreground)); }
+    .gf-wifi-bars span:nth-child(1) { height: 4px; }
+    .gf-wifi-bars span:nth-child(2) { height: 8px; }
+    .gf-wifi-bars span:nth-child(3) { height: 12px; }
+    .gf-wifi-bars span:nth-child(4) { height: 16px; }
+    .gf-wifi-lock {
+        width: 12px; height: 12px;
+        opacity: 0.65;
+        color: hsl(var(--muted-foreground));
+        flex-shrink: 0;
+    }
+
+    /* Section header row — h2 + toggle on the right. Matches the
+       compact look of iOS Settings: title left, switch right, status
+       text wrapped beneath as a paragraph. */
+    .settings-section .gf-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 4px;
+    }
+    .settings-section .gf-section-header h2 { margin-bottom: 0; }
+
+    /* Switch primitive — matches shadcn/ui Switch on platform */
+    .settings-section .toggle {
+        position: relative;
+        width: 44px; height: 24px;
+        background: hsl(var(--muted));
+        border: 1px solid hsl(var(--border));
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.18s, border-color 0.18s;
+        flex-shrink: 0;
+        padding: 0;
+    }
+    .settings-section .toggle::after {
+        content: '';
+        position: absolute;
+        top: 50%; left: 2px;
+        width: 18px; height: 18px;
+        background: hsl(var(--foreground));
+        border-radius: 50%;
+        transform: translateY(-50%);
+        transition: left 0.18s, background 0.18s;
+        box-shadow: 0 1px 3px hsla(0, 0%, 0%, 0.3);
+    }
+    .settings-section .toggle.active {
+        background: hsl(var(--primary));
+        border-color: hsl(var(--primary));
+    }
+    .settings-section .toggle.active::after {
+        left: 22px;
+        background: hsl(var(--primary-foreground));
+    }
+
+    /* Device info footer strip inside the settings card */
+    .gf-device-info {
+        background: hsl(var(--muted));
+        border-top: 1px solid hsl(var(--border));
+        padding: 16px 28px;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 16px;
+    }
+    .gf-device-info .gf-title {
+        font-size: 14px; font-weight: 600;
+        color: hsl(var(--foreground));
+        letter-spacing: -0.01em;
+    }
+    .gf-device-info .gf-sub {
+        font-size: 12px;
+        color: hsl(var(--muted-foreground));
+        margin-top: 3px;
+    }
+    .gf-device-info .gf-reset-link {
+        font-size: 12px; color: hsl(var(--muted-foreground));
+        background: transparent; border: none; cursor: pointer;
+        padding: 8px 12px; border-radius: calc(var(--radius) - 2px);
+        font-family: inherit;
+    }
+    .gf-device-info .gf-reset-link:hover {
+        color: hsl(var(--destructive));
+        background: hsl(var(--destructive) / 0.08);
+    }
+
+    /* Auto-save toast — Toast primitive from platform */
+    .gf-save-toast {
+        position: fixed; bottom: 24px; left: 50%;
+        transform: translateX(-50%) translateY(8px);
+        background: hsl(var(--card));
+        color: hsl(var(--foreground));
+        border: 1px solid hsl(var(--border));
+        padding: 12px 18px 12px 14px;
+        border-radius: var(--radius);
+        font-size: 13px; font-weight: 500;
+        z-index: 1000;
+        opacity: 0;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        pointer-events: none;
+        display: flex; align-items: center; gap: 10px;
+        box-shadow: 0 10px 30px hsla(0, 0%, 0%, 0.5);
+        font-family: inherit;
+    }
+    .gf-save-toast::before {
+        content: ''; width: 8px; height: 8px; border-radius: 50%;
+        background: hsl(var(--success));
+        box-shadow: 0 0 0 3px hsl(var(--success) / 0.2);
+    }
+    .gf-save-toast.visible {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+    .detection-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px;
+    }
+    .detection-item {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 14px;
+        background: hsl(var(--background));
+        border: 2px solid hsl(var(--border));
+        border-radius: calc(var(--radius) - 2px);
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+    }
+    .detection-item:hover { border-color: hsl(var(--ring)); }
+    .detection-item.active {
+        border-color: hsl(var(--primary));
+        background: hsl(var(--accent));
+    }
+    .detection-check {
+        width: 18px; height: 18px; border-radius: 4px;
+        border: 2px solid hsl(var(--border));
+        flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        transition: border-color 0.15s, background 0.15s;
+    }
+    .detection-item.active .detection-check {
+        border-color: hsl(var(--primary));
+        background: hsl(var(--primary));
+    }
+    .detection-check svg { width: 12px; height: 12px; display: none; stroke: hsl(var(--primary-foreground)); }
+    .detection-item.active .detection-check svg { display: block; }
+    .detection-info { flex: 1; min-width: 0; }
+    .detection-name { font-size: 13px; font-weight: 500; color: hsl(var(--foreground)); }
+    .detection-meta { font-size: 11px; color: hsl(var(--muted-foreground)); margin-top: 2px; }
+    .priority-high .detection-name { color: hsl(var(--destructive)); }
+    .priority-medium .detection-name { color: hsl(var(--warning)); }
+    .priority-low .detection-name { color: hsl(var(--muted-foreground)); }
+    .toggle-all {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 16px;
+        border-radius: calc(var(--radius) - 2px);
+        background: hsl(var(--card));
+        border: 2px solid hsl(var(--border));
+        color: hsl(var(--foreground));
+        font-size: 13px; font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+    }
+    .toggle-all:hover {
+        background: hsl(var(--accent));
+        border-color: hsl(var(--ring));
+    }
+
+    /* Model cards */
+    .model-card {
+        padding: 16px;
+        background: hsl(var(--background));
+        border: 2px solid hsl(var(--border));
+        border-radius: var(--radius);
+        cursor: pointer; margin-bottom: 10px;
+        transition: border-color 0.15s, background 0.15s;
+    }
+    .model-card:hover { border-color: hsl(var(--ring)); }
+    .model-card.active {
+        border-color: hsl(var(--primary));
+        background: hsl(var(--accent));
+    }
+    .model-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .model-radio {
+        width: 18px; height: 18px; border-radius: 50%;
+        border: 2px solid hsl(var(--border));
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .model-card.active .model-radio { border-color: hsl(var(--primary)); }
+    .model-radio-dot {
+        width: 10px; height: 10px; border-radius: 50%;
+        background: hsl(var(--primary));
+        display: none;
+    }
+    .model-card.active .model-radio-dot { display: block; }
+    .model-name { font-size: 14px; font-weight: 600; color: hsl(var(--foreground)); letter-spacing: -0.01em; }
+    .model-meta { font-size: 12px; color: hsl(var(--muted-foreground)); }
+    .model-desc { font-size: 13px; color: hsl(var(--muted-foreground)); margin-bottom: 8px; line-height: 1.5; }
+    .model-classes {
+        font-size: 12px; color: hsl(var(--muted-foreground)); line-height: 1.6;
+        max-height: 0; overflow: hidden; transition: max-height 0.3s;
+    }
+    .model-card.active .model-classes { max-height: 200px; }
+    .model-class-tag {
+        display: inline-block; padding: 2px 8px; margin: 2px;
+        background: hsl(var(--muted));
+        border-radius: calc(var(--radius) - 4px);
+        color: hsl(var(--foreground));
+        font-size: 11px;
+    }
+    .model-restart-note {
+        font-size: 12px; color: hsl(var(--warning)); margin-top: 6px; display: none;
+    }
+    .model-card.pending .model-restart-note { display: block; }
+
+    /* Safety alarm banner — fires when a camera is bumped or IMU is lost.
+       This is the fail-loud visual: we never silently degrade a zone. */
+    .safety-banner {
+        position: fixed; top: 0; left: 0; right: 0;
+        background: linear-gradient(180deg, #b91c1c 0%, #7f1d1d 100%);
+        color: #fff;
+        padding: 14px 20px;
+        display: none;
+        z-index: 500;
+        text-align: center;
+        font-weight: 700;
+        font-size: 15px;
+        letter-spacing: 0.3px;
+        box-shadow: 0 4px 20px rgba(185,28,28,0.5);
+        animation: safety-pulse 1.2s ease-in-out infinite;
+    }
+    .safety-banner.visible { display: block; }
+    .safety-banner .sb-sub {
+        display: block;
+        font-weight: 400;
+        font-size: 12px;
+        color: #fecaca;
+        margin-top: 4px;
+        letter-spacing: 0.2px;
+    }
+    .safety-banner .sb-btn {
+        display: inline-block;
+        margin-top: 10px;
+        padding: 8px 18px;
+        border-radius: 6px;
+        background: #fff;
+        color: #7f1d1d;
+        font-weight: 700;
+        font-size: 13px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+        border: none;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    .safety-banner .sb-btn:hover { background: #fef2f2; }
+    .safety-banner .sb-btn:disabled {
+        opacity: 0.6; cursor: default;
+        background: #fca5a5; color: #7f1d1d;
+    }
+    .safety-banner .sb-btn-row {
+        display: flex; gap: 8px; justify-content: center;
+        align-items: center; margin-top: 10px;
+    }
+    .safety-banner .sb-btn-secondary {
+        background: transparent; color: #fff;
+        border: 1px solid rgba(255,255,255,0.5);
+    }
+    .safety-banner .sb-btn-secondary:hover {
+        background: rgba(255,255,255,0.1);
+    }
+    .safety-banner .sb-status {
+        font-size: 11px; color: #fecaca; margin-top: 6px;
+        font-weight: 400; min-height: 14px;
+    }
+    @keyframes safety-pulse {
+        0%, 100% { background: linear-gradient(180deg, #b91c1c 0%, #7f1d1d 100%); }
+        50% { background: linear-gradient(180deg, #dc2626 0%, #991b1b 100%); }
+    }
+
+    /* Connection pill in status bar */
+    .status-pill.pill-conn-ok { background: hsla(0, 0%, 100%, 0.08); color: hsl(var(--foreground)); border: 1px solid hsla(0, 0%, 100%, 0.15); }
+    .status-pill.pill-conn-wait { background: hsla(0, 0%, 100%, 0.05); color: hsl(var(--muted-foreground)); border: 1px solid hsla(0, 0%, 100%, 0.1); }
+    .status-pill.pill-conn-err { background: hsla(0, 70%, 55%, 0.18); color: hsl(0 84% 72%); border: 1px solid hsla(0, 70%, 55%, 0.35); }
+
+    /* Model switch confirmation modal */
+    .confirm-modal-backdrop {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+        display: none; align-items: center; justify-content: center;
+        z-index: 700; backdrop-filter: blur(3px);
+    }
+    .confirm-modal-backdrop.visible { display: flex; }
+    .confirm-modal {
+        background: #141414; border: 1px solid #333; border-radius: 12px;
+        padding: 24px 28px; max-width: 440px; width: calc(100% - 48px);
+        box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    }
+    .confirm-modal h3 { margin: 0 0 10px 0; font-size: 17px; color: #eee; }
+    .confirm-modal p { margin: 0 0 6px 0; font-size: 13px; color: #aaa; line-height: 1.5; }
+    .confirm-modal .model-target {
+        margin: 14px 0; padding: 10px 14px;
+        background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px;
+    }
+    .confirm-modal .model-target-name { font-size: 14px; color: #eee; font-weight: 600; }
+    .confirm-modal .model-target-desc { font-size: 11px; color: #777; margin-top: 2px; }
+    .confirm-modal-actions {
+        display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px;
+    }
+    .btn-secondary, .btn-primary {
+        min-height: 40px;
+        padding: 10px 20px;
+        border-radius: calc(var(--radius) - 2px);
+        font-size: 13px; font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        border: 2px solid transparent;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .btn-secondary {
+        background: hsl(var(--card));
+        border-color: hsl(var(--border));
+        color: hsl(var(--foreground));
+    }
+    .btn-secondary:hover {
+        background: hsl(var(--accent));
+        border-color: hsl(var(--ring));
+    }
+    .btn-primary {
+        background: hsl(var(--primary));
+        color: hsl(var(--primary-foreground));
+        border-color: hsl(var(--primary));
+        font-weight: 600;
+    }
+    .btn-primary:hover {
+        background: hsl(0 0% 88%);
+        border-color: hsl(0 0% 88%);
+    }
+
+    /* Category tabs + search */
+    .class-toolbar {
+        display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;
+    }
+    .class-search {
+        flex: 1; min-width: 160px;
+        padding: 10px 14px;
+        background: hsl(var(--input));
+        border: 1px solid hsl(var(--border));
+        border-radius: calc(var(--radius) - 2px);
+        color: hsl(var(--foreground));
+        font-family: inherit;
+        font-size: 13px;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .class-search:hover { border-color: hsl(var(--ring)); }
+    .class-search:focus {
+        border-color: hsl(var(--ring));
+        box-shadow: 0 0 0 3px hsla(var(--ring) / 0.2);
+    }
+    .class-search::placeholder { color: hsl(var(--muted-foreground)); }
+    .cat-tabs {
+        display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch; margin-bottom: 10px;
+    }
+    .cat-tab {
+        padding: 4px 10px; border-radius: 5px; font-size: 11px; font-weight: 500;
+        background: #1a1a1a; border: 1px solid #2a2a2a; color: #888;
+        cursor: pointer; white-space: nowrap; transition: all 0.15s;
+    }
+    .cat-tab:hover { background: #222; color: #ccc; }
+    .cat-tab.active { background: #333; border-color: #555; color: #eee; }
+
+    /* ── Themed in-page keyboard ─────────────────────────────────────── */
+    .gf-kbd {
+        position: fixed; left: 0; right: 0; bottom: 0;
+        background: hsl(var(--background));
+        border-top: 1px solid hsl(var(--border));
+        padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+        z-index: 12000;
+        transform: translateY(110%);
+        transition: transform 0.18s ease-out;
+        user-select: none; -webkit-user-select: none;
+        touch-action: manipulation;
+        box-shadow: 0 -8px 24px rgba(0,0,0,0.35);
+    }
+    .gf-kbd.visible { transform: translateY(0); }
+    .gf-kbd-row {
+        display: flex; gap: 5px; margin-bottom: 5px; justify-content: center;
+    }
+    .gf-kbd-row:last-child { margin-bottom: 0; }
+    .gf-key {
+        flex: 1 1 0; min-width: 0;
+        height: 46px;
+        display: flex; align-items: center; justify-content: center;
+        background: hsl(var(--muted));
+        border: 1px solid hsl(var(--border));
+        color: hsl(var(--foreground));
+        border-radius: calc(var(--radius) - 2px);
+        font-size: 17px; font-weight: 500;
+        cursor: pointer;
+        transition: background 0.08s, transform 0.06s;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .gf-key:active, .gf-key.pressed {
+        background: hsl(var(--accent, 0 0% 22%));
+        transform: scale(0.97);
+    }
+    .gf-key.wide { flex: 1.5 1 0; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+    .gf-key.xwide { flex: 3 1 0; }
+    .gf-key.accent {
+        background: hsl(var(--foreground));
+        color: hsl(var(--background));
+        border-color: hsl(var(--foreground));
+    }
+    .gf-key.toggle.active {
+        background: hsl(var(--foreground) / 0.18);
+        border-color: hsl(var(--foreground) / 0.5);
+        color: hsl(var(--foreground));
+    }
+    .gf-key svg { width: 22px; height: 22px; }
+    .gf-kbd-numeric .gf-kbd-row { gap: 6px; margin-bottom: 6px; }
+    .gf-kbd-numeric .gf-key { height: 50px; font-size: 20px; }
+
+    /* Lift overlays so they aren't covered by the keyboard. */
+    body.gf-kbd-open .settings-body { padding-bottom: 280px; }
+    body.gf-kbd-open .gf-modal { padding-bottom: 280px; }
 </style>
 </head>
 <body>
-<div id="header">
-  <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
-    <rect x="1" y="1" width="8" height="8" rx="2" fill="#4A84BF"/>
-    <rect x="12" y="1" width="8" height="8" rx="2" fill="#3CABD6"/>
-    <rect x="23" y="1" width="8" height="8" rx="2" fill="#90D2E8"/>
-    <rect x="1" y="12" width="8" height="8" rx="2" fill="#4A84BF"/>
-    <rect x="12" y="12" width="8" height="8" rx="2" fill="#3CABD6"/>
-    <rect x="23" y="12" width="8" height="8" rx="2" fill="#90D2E8"/>
-    <rect x="1" y="23" width="8" height="8" rx="2" fill="#4A84BF"/>
-    <rect x="12" y="23" width="8" height="8" rx="2" fill="#3CABD6"/>
-    <rect x="23" y="23" width="8" height="8" rx="2" fill="#90D2E8"/>
-  </svg>
-  <div>
-    <div class="title">GridFront Detect</div>
-    <div class="subtitle" id="machine-subtitle">CAT 950 GC — Wheel Loader #1</div>
-  </div>
-  <div style="margin-left:auto;cursor:pointer;padding:4px" id="settings-btn" onclick="GF.settings.open()">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A6A6A6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-  </div>
-</div>
-<div id="alert-banner"></div>
-<div id="canvas-container"></div>
-<div id="hud">
-  <div class="hud-item"><span class="label"><span class="dot dot-green" id="status-dot"></span>Mock</span><span class="value" id="status-text">OK</span></div>
-  <div class="hud-item"><span class="label">People</span><span class="value" id="people-count">0</span></div>
-  <div class="hud-item"><span class="label">Equipment</span><span class="value" id="equip-count">0</span></div>
-  <div class="hud-item"><span class="label">Markers</span><span class="value" id="marker-count">0</span></div>
-  <div class="hud-item"><span class="label">Nearest</span><span class="value" id="nearest-dist">&mdash;</span></div>
+<div class="app">
+    <div class="status-bar">
+        <div class="status-left">
+            <div class="status-logo">GridFront <span>Scout</span></div>
+            <div class="status-pill pill-live" id="mode-pill">
+                <div class="status-dot"></div><span id="mode-text">LIVE</span>
+            </div>
+            <div class="status-pill pill-clear" id="zone-pill">
+                <span id="zone-text">NO DETECTIONS</span>
+            </div>
+            <div class="status-pill pill-conn-wait" id="conn-pill" title="Camera connection">
+                <span id="conn-text">CONNECTING</span>
+            </div>
+        </div>
+        <div class="status-right">
+            <div class="stat" data-collapse="1"><span>Camera</span> <b id="hud-fps">0</b></div>
+            <div class="stat" data-collapse="1"><span>NN</span> <b id="hud-nn-fps">0</b></div>
+            <div class="stat"><span>Nearest</span> <b id="hud-nearest">--</b></div>
+            <div class="stat" data-collapse="1"><span>Objects</span> <b id="hud-count">0</b></div>
+            <button class="btn-icon" onclick="toggleSettings()" title="Settings">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="safety-banner" id="safety-banner">
+        <span id="safety-banner-title">CAMERA BUMPED — RECALIBRATE BEFORE RESUMING</span>
+        <span class="sb-sub" id="safety-banner-sub"></span>
+        <div class="sb-btn-row">
+            <button type="button" class="sb-btn" id="sb-recalibrate">Recalibrate now</button>
+            <button type="button" class="sb-btn sb-btn-secondary" id="sb-open-settings">Open settings</button>
+        </div>
+        <div class="sb-status" id="sb-status"></div>
+    </div>
+
+    <!-- Settings is reachable via long-press on the side button (PowerMenuActivity).
+         No on-screen entry point — the cab view stays bare. -->
+    <div class="overlay-conn" id="overlay-conn"><span id="overlay-conn-text">CONNECTING</span></div>
+
+    <div class="panels" id="gf-panels">
+        <div class="cab-panel" id="cab-panel">
+            <div class="overlay-zone" id="overlay-zone"><span id="overlay-zone-text">NO DETECTIONS</span></div>
+            <div class="overlay-nearest" id="overlay-nearest"><span class="nearest-label">NEAREST</span><span id="overlay-nearest-text">--</span></div>
+            <div class="cab-display-frame">
+                <svg class="cab-display-svg" id="cab-display" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <radialGradient id="cab-safe-fill" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%"  stop-color="#0b1f12" stop-opacity="0"/>
+                            <stop offset="85%" stop-color="#0b1f12" stop-opacity="0.4"/>
+                            <stop offset="100%" stop-color="#0b1f12" stop-opacity="0.7"/>
+                        </radialGradient>
+                        <filter id="cab-glow" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="2.5" result="blur"/>
+                            <feMerge>
+                                <feMergeNode in="blur"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                    </defs>
+
+                    <!-- Black background disc — flips bright red when a
+                         person enters any danger zone. -->
+                    <circle id="cab-bg-disc" cx="100" cy="100" r="95" fill="#050505"/>
+
+                    <!-- Single neutral outer ring — represents 20 m radius. -->
+                    <circle cx="100" cy="100" r="95" fill="none" stroke="#3a3a3a" stroke-width="1.5"/>
+
+                    <!-- Cardinal tick marks -->
+                    <g stroke="#444" stroke-width="1">
+                        <line x1="100" y1="5"  x2="100" y2="12"/>
+                        <line x1="100" y1="188" x2="100" y2="195"/>
+                        <line x1="5"   y1="100" x2="12"  y2="100"/>
+                        <line x1="188" y1="100" x2="195" y2="100"/>
+                    </g>
+
+                    <!-- Camera FOV cones. Drawn before the machine so the
+                         machine silhouette sits on top of them. -->
+                    <g id="cab-fov-layer"></g>
+
+                    <!-- Danger / warning zone outlines, from config.zones. -->
+                    <g id="cab-zones-layer"></g>
+
+                    <!-- Machine silhouette, sized from config.machine_footprint_m. -->
+                    <g id="cab-machine"></g>
+
+                    <!-- Live detections — populated by updateCabDisplay() from SSE. -->
+                    <g id="cab-detections"></g>
+                </svg>
+            </div>
+        </div>
+    </div>
 </div>
 
-<div id="loading"><div class="spinner"></div><div class="loading-text">Initializing detection system...</div></div>
-<script src="three.min.js"></script>
-<script src="GLTFLoader.js"></script>
-<script src="js/materials.js"></script>
-<script src="js/models/wheel-loader.js"></script>
-<script src="js/models/excavator.js"></script>
-<script src="js/models/dump-truck.js"></script>
-<script src="js/models/dozer.js"></script>
-<script src="js/models/person.js"></script>
-<script src="js/models/props.js"></script>
-<script src="js/scene-manager.js"></script>
-<script src="js/zone-renderer.js"></script>
-<script src="js/model-registry.js"></script>
-<script src="js/detection-renderer.js"></script>
-<script src="js/hud-controller.js"></script>
-<script src="js/orbit-controls.js"></script>
-<script src="js/api-client.js"></script>
-<script src="js/config-manager.js"></script>
-<script src="js/camera-viz.js"></script>
-<script src="js/camera-placement.js"></script>
-<script src="js/settings-panel.js"></script>
-<script src="js/app.js"></script>
+<!-- Model switch confirmation modal -->
+<div class="confirm-modal-backdrop" id="model-confirm-modal">
+    <div class="confirm-modal">
+        <h3>Switch detection model?</h3>
+        <p>The camera firmware will be reflashed with the new model and reboot. Detection will pause for roughly 30 seconds while the new model boots on the device.</p>
+        <div class="model-target">
+            <div class="model-target-name" id="confirm-model-name"></div>
+            <div class="model-target-desc" id="confirm-model-desc"></div>
+        </div>
+        <div class="confirm-modal-actions">
+            <button class="btn-secondary" onclick="cancelModelSwitch()">Cancel</button>
+            <button class="btn-primary" onclick="confirmModelSwitch()">Reflash &amp; Reboot Camera</button>
+        </div>
+    </div>
+</div>
+
+<!-- Settings overlay -->
+<div class="settings-overlay" id="settings-overlay">
+    <div class="settings-container">
+        <div class="settings-header">
+            <div>
+                <h1>Settings</h1>
+                <span class="settings-subtitle">Configure this detection unit</span>
+            </div>
+            <button class="btn-close" onclick="toggleSettings()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+
+        <div class="settings-tabs" role="tablist">
+            <button class="settings-tab active" role="tab" data-tab="general" onclick="switchSettingsTab('general')">General</button>
+            <button class="settings-tab" role="tab" data-tab="detection" onclick="switchSettingsTab('detection')">Detection</button>
+            <button class="settings-tab" role="tab" data-tab="cameras" onclick="switchSettingsTab('cameras')">Cameras</button>
+            <button class="settings-tab" role="tab" data-tab="alerts" onclick="switchSettingsTab('alerts')">Alerts</button>
+            <button class="settings-tab" role="tab" data-tab="network" onclick="switchSettingsTab('network')">Network</button>
+            <button class="settings-tab" role="tab" data-tab="activity" onclick="switchSettingsTab('activity')">Activity</button>
+            <button class="settings-tab" role="tab" data-tab="about" onclick="switchSettingsTab('about')">About</button>
+        </div>
+
+        <div class="settings-body">
+        <div class="tab-panel active" data-panel="general">
+        <div class="settings-section">
+            <h2>Machine Profile</h2>
+            <p>Identity and footprint of the machine this display is mounted on. The footprint sizes the silhouette at the centre of the radar.</p>
+            <div class="gf-field">
+                <label class="gf-label" for="set-machine-name">Machine name</label>
+                <input class="gf-input" id="set-machine-name" placeholder="e.g. Excavator A12" />
+            </div>
+            <div class="gf-field">
+                <label class="gf-label" for="set-machine-type">Machine type</label>
+                <select class="gf-select" id="set-machine-type">
+                    <option value="wheel_loader">Wheel loader</option>
+                    <option value="excavator">Excavator</option>
+                    <option value="haul_truck">Haul truck</option>
+                    <option value="dozer">Dozer</option>
+                    <option value="grader">Grader</option>
+                    <option value="forklift">Forklift</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="gf-row">
+                <div class="gf-field">
+                    <label class="gf-label" for="set-machine-length">Length</label>
+                    <input class="gf-input" id="set-machine-length" type="number" step="0.1" min="0.5" />
+                </div>
+                <div class="gf-field">
+                    <label class="gf-label" for="set-machine-width">Width</label>
+                    <input class="gf-input" id="set-machine-width" type="number" step="0.1" min="0.5" />
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <h2>Units</h2>
+            <p>How distances are shown on the cab display, HUD, and settings inputs. Persists across reloads.</p>
+            <div style="display:flex; gap:10px;">
+                <div class="detection-item units-toggle" data-units="m" onclick="setUnits('m')" style="max-width:180px;">
+                    <div class="detection-check">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <div class="detection-info">
+                        <div class="detection-name">Meters</div>
+                        <div class="detection-meta">e.g. 3 m</div>
+                    </div>
+                </div>
+                <div class="detection-item units-toggle" data-units="ft" onclick="setUnits('ft')" style="max-width:180px;">
+                    <div class="detection-check">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <div class="detection-info">
+                        <div class="detection-name">Feet</div>
+                        <div class="detection-meta">e.g. 11 ft</div>
+                    </div>
+                </div>
+            </div>
+            <div class="gf-label" style="margin-top:14px;">Decimal places</div>
+            <div style="display:flex; gap:8px; margin-top:6px;">
+                <div class="detection-item decimals-toggle" data-decimals="0" onclick="setDecimals(0)" style="max-width:140px;">
+                    <div class="detection-check">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <div class="detection-info">
+                        <div class="detection-name">0</div>
+                        <div class="detection-meta">1 ft</div>
+                    </div>
+                </div>
+                <div class="detection-item decimals-toggle" data-decimals="1" onclick="setDecimals(1)" style="max-width:140px;">
+                    <div class="detection-check">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <div class="detection-info">
+                        <div class="detection-name">1</div>
+                        <div class="detection-meta">1.2 ft</div>
+                    </div>
+                </div>
+                <div class="detection-item decimals-toggle" data-decimals="2" onclick="setDecimals(2)" style="max-width:140px;">
+                    <div class="detection-check">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    </div>
+                    <div class="detection-info">
+                        <div class="detection-name">2</div>
+                        <div class="detection-meta">1.23 ft</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <h2>Display</h2>
+            <div class="gf-field">
+                <label class="gf-label" for="set-brightness">Brightness</label>
+                <input type="range" id="set-brightness" min="10" max="100" value="80"
+                       style="width:100%; accent-color: hsl(var(--foreground));"
+                       oninput="onBrightnessInput(this.value)" />
+                <div class="gf-kv-sub" id="set-brightness-label" style="margin-top:4px;">80%</div>
+            </div>
+        </div>
+        </div><!-- /general -->
+
+        <div class="tab-panel" data-panel="detection">
+        <div class="settings-section">
+            <h2>Detection Models</h2>
+            <div class="gf-notice gf-notice-v2">
+                <div class="gf-notice-title">v2 — not yet functional in field</div>
+                <div class="gf-notice-body">The model is baked into the camera at flash time. Picking a model here records the choice, but the camera keeps running the model it was last flashed with. Field-side reflash needs a host computer (e.g. Raspberry Pi) on the camera network — planned for v2.</div>
+            </div>
+            <p>Select the active model. Each model runs on the camera's VPU — only one can be active at a time.</p>
+            <div id="model-list"></div>
+        </div>
+        <div class="settings-section">
+            <h2>Detection Classes</h2>
+            <p>Toggle which detected classes to show. Only classes from the active model appear here.</p>
+            <div id="detection-section"></div>
+        </div>
+        </div><!-- /detection -->
+
+        <div class="tab-panel" data-panel="cameras">
+        <div class="settings-section">
+            <h2>Update rate</h2>
+            <p>How often each camera sends detection packets to the tablet. Inference still runs at the camera's full rate locally — this only caps the network update rate, which directly affects tablet smoothness.</p>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Detection messages / sec</div>
+                    <div class="gf-kv-sub" id="set-target-fps-sub">Lower = smoother tablet, higher = more responsive radar</div>
+                </div>
+                <select class="gf-select" id="set-target-fps" style="max-width:140px;" onchange="autoSaveTargetFps()">
+                    <option value="2">2 / sec</option>
+                    <option value="5">5 / sec</option>
+                    <option value="10" selected>10 / sec</option>
+                    <option value="15">15 / sec</option>
+                    <option value="20">20 / sec</option>
+                    <option value="30">30 / sec</option>
+                    <option value="0">Uncapped</option>
+                </select>
+            </div>
+        </div>
+        <div class="settings-section">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <h2 style="margin:0;">Cameras</h2>
+                <button class="btn-primary" onclick="addCamera()" style="padding:7px 14px; font-size:13px;">+ Add</button>
+            </div>
+            <p>Each camera's mount pose is set here — position on the machine, yaw, HFOV and max range. The tablet pushes this config to the camera over UDP; the camera pre-classifies every detection into numeric scene states before sending it back for display.</p>
+
+            <div id="cameras-grid" style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+                <div style="font-size:13px; color: hsl(var(--muted-foreground));">Loading cameras…</div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <h2>Detection Zones</h2>
+            <p>Distance from the machine edge. A 1.5&nbsp;m red zone alerts whenever a person is within 1.5&nbsp;m of the machine on any side. Cameras classify every detection as outside, yellow, or red before sending it to the display.</p>
+            <div class="gf-row">
+                <div class="gf-field">
+                    <label class="gf-label" for="set-zone-danger" style="color: hsl(var(--destructive));">Red</label>
+                    <input class="gf-input" id="set-zone-danger" type="number" step="0.5" min="0.5" oninput="autoSaveZones()" />
+                </div>
+                <div class="gf-field">
+                    <label class="gf-label" for="set-zone-warning" style="color: hsl(var(--warning));">Yellow</label>
+                    <input class="gf-input" id="set-zone-warning" type="number" step="0.5" min="0.5" oninput="autoSaveZones()" />
+                </div>
+            </div>
+        </div>
+        </div><!-- /cameras -->
+
+        <div class="tab-panel" data-panel="alerts">
+        <div class="settings-section">
+            <h2>Alerts</h2>
+            <p>Audible alarms when detections enter yellow or red zones.</p>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Sound alerts</div>
+                    <div class="gf-kv-sub">Play audio when persons are detected</div>
+                </div>
+                <button class="toggle" id="set-sound-enabled" onclick="this.classList.toggle('active'); autoSaveSettings();"></button>
+            </div>
+            <div class="gf-field">
+                <label class="gf-label" for="set-volume">System volume</label>
+                <input type="range" id="set-volume" min="0" max="100" value="80"
+                       style="width:100%; accent-color: hsl(var(--foreground));"
+                       oninput="onVolumeInput(this.value)" />
+                <div class="gf-kv-sub" id="set-volume-label" style="margin-top:4px;">80%</div>
+            </div>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Danger alarm</div>
+                    <div class="gf-kv-sub">Repeating alarm for red zone</div>
+                </div>
+                <select class="gf-select" id="set-sound-danger" style="max-width:140px;" onchange="previewSound(this.value)">
+                    <option value="alarm">Alarm</option>
+                    <option value="beep">Beep</option>
+                    <option value="siren">Siren</option>
+                </select>
+            </div>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Warning chime</div>
+                    <div class="gf-kv-sub">Single tone for yellow zone</div>
+                </div>
+                <select class="gf-select" id="set-sound-warning" style="max-width:140px;" onchange="previewSound(this.value)">
+                    <option value="chime">Chime</option>
+                    <option value="beep">Beep</option>
+                    <option value="tone">Tone</option>
+                </select>
+            </div>
+            <button class="btn-secondary" onclick="previewSound(document.getElementById('set-sound-danger').value)" style="margin-top:10px;">Test sound</button>
+        </div>
+        </div><!-- /alerts -->
+
+        <div class="tab-panel" data-panel="network">
+        <div class="settings-section">
+            <div class="gf-section-header">
+                <h2 style="margin-bottom:2px;">Wi-Fi</h2>
+                <button class="toggle" id="wifi-toggle" onclick="onWifiToggle(this)"></button>
+            </div>
+            <p id="wifi-status-sub" style="margin-bottom:14px;">—</p>
+            <div id="wifi-list-wrap" class="gf-field" style="display:none;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                    <label class="gf-label" style="margin:0;">Available networks</label>
+                    <span class="gf-kv-sub" id="wifi-scan-state">—</span>
+                </div>
+                <div id="wifi-scan-list" class="gf-wifi-list">
+                    <div class="gf-wifi-empty">Searching…</div>
+                </div>
+            </div>
+            <div id="wifi-connect-pane" style="display:none; margin-top:14px; padding-top:12px; border-top:1px solid hsl(var(--border));">
+                <div class="gf-kv-sub" style="margin-bottom:8px;">Connecting to <b id="wifi-connect-ssid">—</b></div>
+                <div class="gf-field">
+                    <label class="gf-label" for="set-wifi-pass">Password</label>
+                    <input class="gf-input" id="set-wifi-pass" type="password" placeholder="Password (leave blank for open)" />
+                </div>
+                <input type="hidden" id="set-wifi-ssid" />
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button class="btn-primary" onclick="onWifiConnect()">Connect</button>
+                    <button class="btn-secondary" onclick="closeWifiConnectPane()">Cancel</button>
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <div class="gf-section-header">
+                <h2 style="margin-bottom:2px;">Cellular</h2>
+                <button class="toggle" id="cell-toggle" onclick="onCellularToggle(this)"></button>
+            </div>
+            <p id="cell-status-sub" style="margin-bottom:14px;">—</p>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">SIM</div>
+                    <div class="gf-kv-sub" id="cell-sim-sub">—</div>
+                </div>
+            </div>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Carrier</div>
+                    <div class="gf-kv-sub" id="cell-carrier-sub">—</div>
+                </div>
+            </div>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Data</div>
+                    <div class="gf-kv-sub" id="cell-data-sub">—</div>
+                </div>
+            </div>
+            <div class="gf-field">
+                <label class="gf-label" for="set-sim-apn">APN (optional)</label>
+                <input class="gf-input" id="set-sim-apn" placeholder="e.g. internet" />
+            </div>
+        </div>
+        </div><!-- /network -->
+
+        <div class="tab-panel" data-panel="activity">
+        <div class="settings-section">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+                <h2 style="margin:0;">Activity</h2>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn-secondary" id="activity-pause" onclick="toggleActivityPause()" style="padding:6px 12px; font-size:12px;">Pause</button>
+                    <button class="btn-secondary" onclick="clearActivityLog()" style="padding:6px 12px; font-size:12px;">Clear</button>
+                </div>
+            </div>
+            <p>Live event log. Captures detection-track entries into yellow/red zones and connection state changes. Last 200 events, in-memory only.</p>
+            <div id="activity-log" style="margin-top:8px; max-height:60vh; overflow-y:auto; border:1px solid hsl(var(--border)); border-radius: var(--radius); padding:6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; line-height:1.55;">
+                <div class="gf-kv-sub" style="padding:8px;">No events yet — waiting for detections.</div>
+            </div>
+        </div>
+        </div><!-- /activity -->
+
+        <div class="tab-panel" data-panel="about">
+        <div class="settings-section">
+            <h2>About</h2>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Device</div>
+                    <div class="gf-kv-sub">GridFront Scout</div>
+                </div>
+            </div>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Serial</div>
+                    <div class="gf-kv-sub" id="about-serial">—</div>
+                </div>
+            </div>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Version</div>
+                    <div class="gf-kv-sub" id="about-version">—</div>
+                </div>
+            </div>
+        </div>
+        <div class="settings-section">
+            <h2>Debug</h2>
+            <div class="gf-kv">
+                <div>
+                    <div class="gf-kv-label">Developer access</div>
+                    <div class="gf-kv-sub">Enables USB + wireless ADB for on-site support</div>
+                </div>
+                <button class="toggle" id="about-debug-toggle" onclick="onDebugToggle(this)"></button>
+            </div>
+            <div class="gf-kv-sub" id="about-debug-endpoint" style="margin-top:6px; font-family: monospace;"></div>
+        </div>
+        <div class="settings-section">
+            <h2>System</h2>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn-secondary" onclick="onAboutReboot()">Reboot</button>
+                <button class="btn-secondary" onclick="resetSettings()">Reset to defaults</button>
+            </div>
+        </div>
+        </div><!-- /about -->
+        </div><!-- /settings-body -->
+    </div>
+</div>
+<div class="gf-save-toast" id="gf-save-toast">Saved</div>
+
+<script>
+// ── Model & Detection Library ──────────────────────────────
+var availableModels = [];
+var activeModelId = '';
+var pendingModelId = '';
+var DETECTION_CLASSES = [];
+
+// Per-class enable map for the active model. Lives on the server under
+// config.class_filters[model_id] so toggles survive reloads and sync
+// across devices (operator tablet + dev browser, etc).
+var activeDetections = {};
+var _classFilterTimer = null;
+
+function saveDetections() {
+    // Debounced POST. Compute the disabled list from activeDetections and
+    // send only the entry for the current model.
+    if (_classFilterTimer) clearTimeout(_classFilterTimer);
+    _classFilterTimer = setTimeout(function() {
+        if (!activeModelId) return;
+        var disabled = Object.keys(activeDetections).filter(function(k) {
+            return activeDetections[k] === false;
+        });
+        fetch('/api/detection/class_filters', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_id: activeModelId, disabled: disabled }),
+        }).catch(function() {});
+    }, 300);
+}
+
+// Category + priority for known classes
+var CLASS_META = {
+    'person':'People|high','Person':'People|high',
+    'bicycle':'Vehicles|medium','car':'Vehicles|high','motorbike':'Vehicles|medium',
+    'bus':'Vehicles|high','train':'Vehicles|high','truck':'Vehicles|high','boat':'Vehicles|medium',
+    'aeroplane':'Vehicles|low',
+    'traffic light':'Street|medium','fire hydrant':'Street|medium','stop sign':'Street|medium',
+    'parking meter':'Street|low','bench':'Street|low',
+    'bird':'Animals|low','cat':'Animals|medium','dog':'Animals|medium','horse':'Animals|medium',
+    'sheep':'Animals|medium','cow':'Animals|medium','elephant':'Animals|medium','bear':'Animals|medium',
+    'zebra':'Animals|low','giraffe':'Animals|low',
+    'backpack':'Accessories|low','umbrella':'Accessories|low','handbag':'Accessories|low',
+    'tie':'Accessories|low','suitcase':'Accessories|low',
+    'frisbee':'Sports|low','skis':'Sports|low','snowboard':'Sports|low','sports ball':'Sports|low',
+    'kite':'Sports|low','baseball bat':'Sports|low','baseball glove':'Sports|low',
+    'skateboard':'Sports|low','surfboard':'Sports|low','tennis racket':'Sports|low',
+    'bottle':'Kitchen|low','wine glass':'Kitchen|low','cup':'Kitchen|low','fork':'Kitchen|low',
+    'knife':'Kitchen|low','spoon':'Kitchen|low','bowl':'Kitchen|low',
+    'banana':'Food|low','apple':'Food|low','sandwich':'Food|low','orange':'Food|low',
+    'broccoli':'Food|low','carrot':'Food|low','hot dog':'Food|low','pizza':'Food|low',
+    'donut':'Food|low','cake':'Food|low',
+    'chair':'Indoor|low','sofa':'Indoor|low','pottedplant':'Indoor|low','bed':'Indoor|low',
+    'diningtable':'Indoor|low','toilet':'Indoor|low',
+    'tvmonitor':'Electronics|low','laptop':'Electronics|low','mouse':'Electronics|low',
+    'remote':'Electronics|low','keyboard':'Electronics|low','cell phone':'Electronics|low',
+    'microwave':'Electronics|low','oven':'Electronics|low','toaster':'Electronics|low',
+    'sink':'Indoor|low','refrigerator':'Electronics|low',
+    'book':'Indoor|low','clock':'Indoor|low','vase':'Indoor|low','scissors':'Indoor|low',
+    'teddy bear':'Indoor|low','hair drier':'Indoor|low','toothbrush':'Indoor|low',
+    // PPE classes
+    'Hardhat':'Safety|high','Mask':'Safety|medium','NO-Hardhat':'Safety|high',
+    'NO-Mask':'Safety|medium','NO-Safety Vest':'Safety|high','Safety Cone':'Safety|medium',
+    'Safety Vest':'Safety|high','machinery':'Vehicles|high','vehicle':'Vehicles|high',
+};
+
+function classDisplayName(id) {
+    return id.split(' ').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+}
+
+function getClassCategory(id) { return (CLASS_META[id] || 'Other|low').split('|')[0]; }
+function getClassPriority(id) { return (CLASS_META[id] || 'Other|low').split('|')[1]; }
+
+function buildClassesFromModel(model) {
+    if (!model || !model.classes) return [];
+    return model.classes.map(function(cls, i) {
+        return { id: cls, name: classDisplayName(cls), priority: getClassPriority(cls), category: getClassCategory(cls), cocoId: i };
+    });
+}
+
+function loadModels() {
+    return fetch('/api/models').then(function(r) { return r.json(); })
+        .then(function(data) {
+            availableModels = data.models || [];
+            activeModelId = data.active_model || '';
+            pendingModelId = data.pending_model || '';
+            var activeModel = availableModels.find(function(m) { return m.id === activeModelId; });
+            DETECTION_CLASSES = buildClassesFromModel(activeModel);
+            activeDetections = {};
+            DETECTION_CLASSES.forEach(function(c) { activeDetections[c.id] = true; });
+            renderModelList();
+        }).catch(function() {});
+}
+loadModels();
+
+// ── Model list rendering ──────────────────────────────────
+function renderModelList() {
+    var container = document.getElementById('model-list');
+    if (!container) return;
+    container.innerHTML = '';
+    availableModels.forEach(function(model) {
+        var isActive = model.id === activeModelId;
+        var isPending = model.id === pendingModelId;
+        var card = document.createElement('div');
+        card.className = 'model-card' + (isActive ? ' active' : '') + (isPending ? ' pending' : '');
+        var classesHtml = (model.classes || []).slice(0, 20).map(function(c) {
+            return '<span class="model-class-tag">' + c + '</span>';
+        }).join('');
+        if ((model.classes || []).length > 20) classesHtml += '<span class="model-class-tag">+' + (model.classes.length - 20) + ' more</span>';
+        card.innerHTML =
+            '<div class="model-card-header">' +
+                '<div class="model-radio"><div class="model-radio-dot"></div></div>' +
+                '<div style="flex:1"><div class="model-name">' + model.name + '</div>' +
+                '<div class="model-meta">' + model.class_count + ' classes &middot; ' + model.input_size[0] + 'x' + model.input_size[1] + '</div></div>' +
+            '</div>' +
+            '<div class="model-desc">' + (model.description || '') + '</div>' +
+            '<div class="model-classes">' + classesHtml + '</div>' +
+            '<div class="model-restart-note">Pending — waiting for camera reflash.</div>';
+        card.setAttribute('data-model-id', model.id);
+        card.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (model.id === activeModelId) return;
+            requestModelSwitch(model);
+        });
+        container.appendChild(card);
+    });
+}
+
+// ── Model-switch confirmation flow ─────────────────────────
+var pendingSwitchModel = null;
+function requestModelSwitch(model) {
+    pendingSwitchModel = model;
+    document.getElementById('confirm-model-name').textContent = model.name;
+    document.getElementById('confirm-model-desc').textContent = model.description || '';
+    document.getElementById('model-confirm-modal').classList.add('visible');
+}
+function cancelModelSwitch() {
+    pendingSwitchModel = null;
+    document.getElementById('model-confirm-modal').classList.remove('visible');
+}
+function confirmModelSwitch() {
+    var model = pendingSwitchModel;
+    document.getElementById('model-confirm-modal').classList.remove('visible');
+    if (!model) return;
+    pendingModelId = model.id;
+    renderModelList();
+    fetch('/api/models/active', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ model_id: model.id })
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.status !== 'pending' && data.status !== 'ok') {
+            console.error('Model switch response unexpected:', data);
+        }
+        // Re-pull state so UI reflects what the server actually persisted.
+        loadModels();
+    }).catch(function(err) {
+        console.error('Model switch failed:', err);
+    });
+    pendingSwitchModel = null;
+}
+
+// ── Detection class grid with tabs + search ───────────────
+var currentCategory = 'All';
+var classSearchQuery = '';
+
+function getCategories() {
+    var cats = {};
+    DETECTION_CLASSES.forEach(function(c) { cats[c.category] = true; });
+    return ['All'].concat(Object.keys(cats).sort());
+}
+
+function renderDetectionGrid() {
+    var section = document.getElementById('detection-section');
+    if (!section) return;
+
+    // Build tabs
+    var categories = getCategories();
+    var tabsHtml = categories.map(function(cat) {
+        return '<div class="cat-tab' + (cat === currentCategory ? ' active' : '') + '" data-cat="' + cat + '">' + cat + '</div>';
+    }).join('');
+
+    // Count enabled
+    var enabledCount = DETECTION_CLASSES.filter(function(c) { return activeDetections[c.id] !== false; }).length;
+
+    section.innerHTML =
+        '<div class="class-toolbar">' +
+            '<input class="class-search" type="text" placeholder="Search classes..." id="class-search" value="' + classSearchQuery + '">' +
+            '<button class="toggle-all" onclick="toggleAllDetections()">' + enabledCount + '/' + DETECTION_CLASSES.length + ' enabled</button>' +
+        '</div>' +
+        '<div class="cat-tabs" id="cat-tabs">' + tabsHtml + '</div>' +
+        '<div class="detection-grid" id="detection-grid"></div>';
+
+    // Tab click handlers
+    document.querySelectorAll('.cat-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            currentCategory = tab.getAttribute('data-cat');
+            renderDetectionGrid();
+        });
+    });
+
+    // Search handler
+    var searchInput = document.getElementById('class-search');
+    searchInput.addEventListener('input', function() {
+        classSearchQuery = searchInput.value.toLowerCase();
+        renderClassItems();
+    });
+    // Focus search if there was a query
+    if (classSearchQuery) searchInput.focus();
+
+    renderClassItems();
+}
+
+function renderClassItems() {
+    var grid = document.getElementById('detection-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    var filtered = DETECTION_CLASSES.filter(function(cls) {
+        if (currentCategory !== 'All' && cls.category !== currentCategory) return false;
+        if (classSearchQuery && cls.name.toLowerCase().indexOf(classSearchQuery) === -1 && cls.id.toLowerCase().indexOf(classSearchQuery) === -1) return false;
+        return true;
+    });
+
+    filtered.forEach(function(cls) {
+        var active = activeDetections[cls.id] !== false;
+        var el = document.createElement('div');
+        el.className = 'detection-item priority-' + cls.priority + (active ? ' active' : '');
+        el.innerHTML =
+            '<div class="detection-check"><svg viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' +
+            '<div class="detection-info"><div class="detection-name">' + cls.name + '</div>' +
+            '<div class="detection-meta">' + cls.priority.toUpperCase() + ' &middot; ' + cls.category + '</div></div>';
+        el.onclick = function() { activeDetections[cls.id] = !activeDetections[cls.id]; saveDetections(); renderDetectionGrid(); };
+        grid.appendChild(el);
+    });
+
+    if (!filtered.length) {
+        grid.innerHTML = '<div style="color:#555;font-size:12px;padding:12px;">No matching classes</div>';
+    }
+}
+
+function toggleAllDetections() {
+    // Toggle only visible/filtered classes
+    var visible = DETECTION_CLASSES.filter(function(c) {
+        if (currentCategory !== 'All' && c.category !== currentCategory) return false;
+        if (classSearchQuery && c.name.toLowerCase().indexOf(classSearchQuery) === -1) return false;
+        return true;
+    });
+    var allOn = visible.every(function(c) { return activeDetections[c.id] !== false; });
+    visible.forEach(function(c) { activeDetections[c.id] = !allOn; });
+    saveDetections(); renderDetectionGrid();
+}
+
+function toggleSettings() {
+    var o = document.getElementById('settings-overlay');
+    o.classList.toggle('open');
+    if (o.classList.contains('open')) {
+        renderModelList();
+        renderDetectionGrid();
+        loadSettingsFields();
+        loadCamerasTab();
+    }
+}
+
+function switchSettingsTab(name) {
+    var overlay = document.getElementById('settings-overlay');
+    if (!overlay) return;
+    var tabs = overlay.querySelectorAll('.settings-tab');
+    tabs.forEach(function(t) {
+        t.classList.toggle('active', t.getAttribute('data-tab') === name);
+    });
+    var panels = overlay.querySelectorAll('.tab-panel');
+    panels.forEach(function(p) {
+        p.classList.toggle('active', p.getAttribute('data-panel') === name);
+    });
+    // Scroll body back to top when switching tabs so the user
+    // always lands at the top of the new tab's content.
+    var body = overlay.querySelector('.settings-body');
+    if (body) body.scrollTop = 0;
+    if (name === 'network') {
+        refreshNetworkStatus();
+        // Only kick a scan if Wi-Fi is on — otherwise the list stays
+        // hidden and there's nothing to populate.
+        try {
+            var w = JSON.parse((GF && GF.getWifiInfo) ? GF.getWifiInfo() : '{}');
+            if (w.enabled) { onWifiScan(true); startWifiAutoScan(); }
+        } catch (e) {}
+    } else {
+        stopWifiAutoScan();
+    }
+    if (name === 'about') loadAboutTab();
+    if (name === 'activity') _renderActivityLog();
+    if (name === 'detection') loadModels();
+}
+
+// ── Merged settings form — machine/zones/alerts/conn/platform ──
+// These live on /api/config and /api/machines. The form loads when
+// the overlay opens and persists on Save. Immediate-effect toggles
+// (Debug Mode, Units, Models, Detection Classes, Calibrate) are
+// handled elsewhere and still apply instantly — only the form-style
+// fields go through the Save button.
+function showSaveToast(msg) {
+    var t = document.getElementById('gf-save-toast');
+    if (!t) return;
+    t.textContent = msg || 'Saved';
+    t.classList.add('visible');
+    setTimeout(function() { t.classList.remove('visible'); }, 1400);
+}
+
+// ── GFAndroid bridge helpers ─────────────────────────────
+var GF = (typeof GFAndroid !== 'undefined') ? GFAndroid : null;
+
+function onBrightnessInput(v) {
+    var lbl = document.getElementById('set-brightness-label');
+    if (lbl) lbl.textContent = v + '%';
+    if (GF && GF.setBrightness) GF.setBrightness(parseInt(v, 10));
+    autoSaveSettings();
+}
+
+function onVolumeInput(v) {
+    var lbl = document.getElementById('set-volume-label');
+    if (lbl) lbl.textContent = v + '%';
+    if (GF && GF.setVolume) GF.setVolume(parseInt(v, 10));
+    autoSaveSettings();
+}
+
+// ── Sound preview ────────────────────────────────────────
+// One AudioContext shared across previews and live alarms; beeps
+// are generated on-the-fly so we don't need to ship audio files.
+// Android WebView requires a user gesture before the context can
+// start producing sound, so we resume() on the first touch event.
+var _sfxCtx = null;
+function _ensureCtx() {
+    try {
+        if (!_sfxCtx) _sfxCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (_sfxCtx.state === 'suspended') _sfxCtx.resume();
+    } catch (e) {}
+    return _sfxCtx;
+}
+// Unlock audio on the first interaction with the page. Without this,
+// the very first alarm tick after page load is silent on Android.
+['touchstart', 'click', 'keydown'].forEach(function(evt) {
+    window.addEventListener(evt, _ensureCtx, { once: false, passive: true });
+});
+function _sfxPlay(type, pattern) {
+    try {
+        var ctx = _ensureCtx();
+        if (!ctx) return;
+        var t0 = ctx.currentTime;
+        pattern.forEach(function(step, i) {
+            var osc = ctx.createOscillator();
+            var gain = ctx.createGain();
+            osc.type = type;
+            osc.frequency.value = step.freq;
+            osc.connect(gain); gain.connect(ctx.destination);
+            var start = t0 + step.at;
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(0.5, start + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + step.dur);
+            osc.start(start); osc.stop(start + step.dur + 0.02);
+        });
+    } catch (e) { /* no audio available */ }
+}
+
+// ── Live zone alarms ─────────────────────────────────────
+// Driven from updateCabDisplay() once per detection frame.
+// Danger: repeating alarm while at least one detection is in the
+// danger ring. Warning: single chime when zone transitions UP into
+// warning, then quiet until the next clear→warning transition (avoids
+// nagging beeps while a person is just standing in the warning ring).
+var _alarmZoneCode = ZONE_NONE; // last reported scene state
+var _dangerLoop = null;        // setInterval handle while looping
+function _soundEnabled() {
+    var t = document.getElementById('set-sound-enabled');
+    return !!(t && t.classList.contains('active'));
+}
+function _selSound(id, fallback) {
+    var el = document.getElementById(id);
+    return (el && el.value) || fallback;
+}
+function _startDangerLoop() {
+    if (_dangerLoop) return;
+    var fire = function() {
+        if (!_soundEnabled()) return;
+        previewSound(_selSound('set-sound-danger', 'alarm'));
+    };
+    fire();
+    _dangerLoop = setInterval(fire, 1000);
+}
+function _stopDangerLoop() {
+    if (_dangerLoop) { clearInterval(_dangerLoop); _dangerLoop = null; }
+}
+function updateAlarms(sceneCode) {
+    sceneCode = Number(sceneCode) || ZONE_NONE;
+    if (sceneCode === _alarmZoneCode) return;
+    var prev = _alarmZoneCode;
+    _alarmZoneCode = sceneCode;
+    if (sceneCode === ZONE_RED) {
+        _startDangerLoop();
+    } else if (sceneCode === ZONE_YELLOW) {
+        _stopDangerLoop();
+        // Only chime on UP transitions into warning, not on
+        // danger→warning de-escalation (already alarming).
+        if (prev <= ZONE_OUTSIDE && _soundEnabled()) {
+            previewSound(_selSound('set-sound-warning', 'chime'));
+        }
+    } else {
+        _stopDangerLoop();
+    }
+}
+function previewSound(kind) {
+    switch (kind) {
+        case 'alarm': _sfxPlay('sawtooth', [
+            {at:0.00,freq:880,dur:0.18}, {at:0.20,freq:880,dur:0.18},
+            {at:0.40,freq:880,dur:0.18}]); break;
+        case 'siren': _sfxPlay('sine', [
+            {at:0.00,freq:600,dur:0.30}, {at:0.32,freq:900,dur:0.30}]); break;
+        case 'chime': _sfxPlay('sine', [
+            {at:0.00,freq:1320,dur:0.35}]); break;
+        case 'tone':  _sfxPlay('triangle', [
+            {at:0.00,freq:700,dur:0.30}]); break;
+        case 'beep':
+        default:      _sfxPlay('square', [
+            {at:0.00,freq:1000,dur:0.12}]); break;
+    }
+}
+
+// ── Network tab ─────────────────────────────────────────
+var _wifiAutoScanTimer = null;
+var _wifiLastScan = 0;
+
+function refreshNetworkStatus() {
+    if (!GF) return;
+    try {
+        var w = JSON.parse(GF.getWifiInfo() || '{}');
+        var toggle = document.getElementById('wifi-toggle');
+        if (toggle) toggle.classList.toggle('active', !!w.enabled);
+        var sub = document.getElementById('wifi-status-sub');
+        var listWrap = document.getElementById('wifi-list-wrap');
+        if (sub) {
+            if (!w.enabled) {
+                sub.textContent = 'Off';
+            } else if (w.connected) {
+                var ssidStr = w.ssid || '(connected)';
+                var bits = ['Connected to ' + ssidStr];
+                if (w.ip) bits.push(w.ip);
+                if (typeof w.rssi === 'number' && w.rssi !== 0) bits.push(w.rssi + ' dBm');
+                sub.textContent = bits.join('  ·  ');
+            } else {
+                // If a scan has already populated rows, the user can act —
+                // "searching" is misleading. Otherwise the radio just came
+                // up and we're waiting for the first results.
+                var listEl = document.getElementById('wifi-scan-list');
+                var hasRows = listEl && listEl.querySelector('.gf-wifi-row');
+                sub.textContent = hasRows ? 'On — tap a network to connect' : 'On — searching for networks';
+            }
+        }
+        if (listWrap) listWrap.style.display = w.enabled ? '' : 'none';
+        var ssidEl = document.getElementById('set-wifi-ssid');
+        if (ssidEl && !ssidEl.value && w.ssid && w.ssid.indexOf('<unknown') === -1) {
+            ssidEl.value = w.ssid;
+        }
+    } catch (e) {}
+    try {
+        var c = JSON.parse(GF.getCellularInfo() || '{}');
+        var enabled = !!c.dataEnabled;
+        var cellToggle = document.getElementById('cell-toggle');
+        if (cellToggle) cellToggle.classList.toggle('active', enabled);
+        var cellSub = document.getElementById('cell-status-sub');
+        if (cellSub) {
+            if (c.simState === 'absent') cellSub.textContent = 'No SIM inserted';
+            else if (!enabled) cellSub.textContent = 'Mobile data off';
+            else cellSub.textContent = (c.carrier || '(no carrier)') + ' · ' + (c.dataState || '—');
+        }
+        var sim = document.getElementById('cell-sim-sub');
+        if (sim) sim.textContent = c.simState || '—';
+        var car = document.getElementById('cell-carrier-sub');
+        if (car) car.textContent = c.carrier || (c.simState === 'absent' ? 'No SIM' : '—');
+        var dat = document.getElementById('cell-data-sub');
+        if (dat) dat.textContent = c.dataState || '—';
+    } catch (e) {}
+}
+
+function onWifiToggle(btn) {
+    var enable = !btn.classList.contains('active');
+    btn.classList.toggle('active', enable);
+    if (GF && GF.setWifiEnabled) GF.setWifiEnabled(enable);
+    var listWrap = document.getElementById('wifi-list-wrap');
+    if (listWrap) listWrap.style.display = enable ? '' : 'none';
+    if (enable) {
+        // Stagger refreshes — radio takes a moment to come up before
+        // scan results are valid. First refresh just flips status text;
+        // the real scan kicks in once auto-scan polls find it ready.
+        setTimeout(refreshNetworkStatus, 600);
+        setTimeout(function () { onWifiScan(true); }, 1500);
+        startWifiAutoScan();
+    } else {
+        stopWifiAutoScan();
+        setTimeout(refreshNetworkStatus, 800);
+        var listEl = document.getElementById('wifi-scan-list');
+        if (listEl) listEl.innerHTML = '<div class="gf-wifi-empty">Searching…</div>';
+    }
+}
+
+function onCellularToggle(btn) {
+    var enable = !btn.classList.contains('active');
+    btn.classList.toggle('active', enable);
+    if (GF && GF.setMobileDataEnabled) GF.setMobileDataEnabled(enable);
+    setTimeout(refreshNetworkStatus, 1500);
+}
+
+function startWifiAutoScan() {
+    stopWifiAutoScan();
+    _wifiAutoScanTimer = setInterval(function () {
+        var overlay = document.getElementById('settings-overlay');
+        var open = overlay && overlay.classList.contains('visible');
+        var onNet = overlay && overlay.querySelector('.tab-panel.active') &&
+                    overlay.querySelector('.tab-panel.active').getAttribute('data-panel') === 'network';
+        if (!open || !onNet) { stopWifiAutoScan(); return; }
+        refreshNetworkStatus();
+        // Throttle scans — framework rate-limits after a few in quick succession.
+        if (Date.now() - _wifiLastScan > 12000) onWifiScan(true);
+    }, 4000);
+}
+
+function stopWifiAutoScan() {
+    if (_wifiAutoScanTimer) { clearInterval(_wifiAutoScanTimer); _wifiAutoScanTimer = null; }
+}
+
+function onWifiConnect() {
+    var ssid = document.getElementById('set-wifi-ssid').value.trim();
+    var pass = document.getElementById('set-wifi-pass').value;
+    if (!ssid) { showSaveToast('Pick a network first'); return; }
+    if (GF && GF.connectWifi) {
+        var ok = GF.connectWifi(ssid, pass);
+        showSaveToast(ok ? 'Connecting…' : 'Connect failed');
+        closeWifiConnectPane();
+        setTimeout(refreshNetworkStatus, 1500);
+        setTimeout(refreshNetworkStatus, 4000);
+    }
+}
+
+function _wifiBars(rssi) {
+    // RSSI → 1-4 bars: -55 = 4, -65 = 3, -75 = 2, else 1.
+    var n = rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : 1;
+    var html = '<span class="gf-wifi-bars">';
+    for (var i = 1; i <= 4; i++) html += '<span class="' + (i <= n ? 'on' : '') + '"></span>';
+    html += '</span>';
+    return html;
+}
+
+function _renderWifiList(networks) {
+    var el = document.getElementById('wifi-scan-list');
+    if (!el) return;
+    if (!networks || networks.length === 0) {
+        el.innerHTML = '<div class="gf-wifi-empty">No networks found. Tap Scan to try again.</div>';
+        return;
+    }
+    var html = '';
+    for (var i = 0; i < networks.length; i++) {
+        var n = networks[i];
+        var ssidEsc = (n.ssid || '').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        var lock = n.secured ?
+            '<svg class="gf-wifi-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+            'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+            '<rect x="4" y="11" width="16" height="9" rx="2"></rect>' +
+            '<path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>' : '';
+        html += '<div class="gf-wifi-row" onclick="onWifiRowTap(\'' +
+            ssidEsc.replace(/'/g, "\\'") + '\', ' + (n.secured ? 'true' : 'false') + ')">' +
+            '<div class="gf-wifi-ssid">' + ssidEsc + '</div>' +
+            '<div class="gf-wifi-meta">' + lock + _wifiBars(n.rssi) + '</div>' +
+        '</div>';
+    }
+    el.innerHTML = html;
+}
+
+function onWifiScan(silent) {
+    if (!GF || !GF.scanWifi) {
+        if (!silent) showSaveToast('Scan unavailable');
+        return;
+    }
+    _wifiLastScan = Date.now();
+    var stateEl = document.getElementById('wifi-scan-state');
+    if (stateEl) stateEl.textContent = 'Scanning…';
+    var el = document.getElementById('wifi-scan-list');
+    if (el && !el.querySelector('.gf-wifi-row')) {
+        el.innerHTML = '<div class="gf-wifi-empty">Searching…</div>';
+    }
+    try { if (GF.triggerWifiScan) GF.triggerWifiScan(); } catch (e) {}
+    setTimeout(function () {
+        try {
+            var nets = JSON.parse(GF.scanWifi() || '[]');
+            _renderWifiList(nets);
+            if (stateEl) stateEl.textContent = nets.length ? nets.length + ' found' : 'No networks';
+        } catch (e) {
+            _renderWifiList([]);
+            if (stateEl) stateEl.textContent = 'Scan failed';
+        }
+    }, 2500);
+}
+
+function onWifiRowTap(ssid, secured) {
+    document.getElementById('set-wifi-ssid').value = ssid;
+    document.getElementById('wifi-connect-ssid').textContent = ssid;
+    var passEl = document.getElementById('set-wifi-pass');
+    passEl.value = '';
+    document.getElementById('wifi-connect-pane').style.display = 'block';
+    if (!secured) {
+        // Open network — connect immediately.
+        onWifiConnect();
+    } else {
+        setTimeout(function () { passEl.focus(); }, 80);
+    }
+}
+
+function closeWifiConnectPane() {
+    var pane = document.getElementById('wifi-connect-pane');
+    if (pane) pane.style.display = 'none';
+    var passEl = document.getElementById('set-wifi-pass');
+    if (passEl) passEl.value = '';
+}
+
+// ── About tab ───────────────────────────────────────────
+function loadAboutTab() {
+    if (!GF) return;
+    try {
+        var s = document.getElementById('about-serial');
+        if (s && GF.getSerial) s.textContent = GF.getSerial();
+        var v = document.getElementById('about-version');
+        if (v && GF.getVersion) v.textContent = 'v' + GF.getVersion();
+        var dbgBtn = document.getElementById('about-debug-toggle');
+        if (dbgBtn && GF.getDebug) dbgBtn.classList.toggle('active', !!GF.getDebug());
+        updateDebugEndpoint();
+    } catch (e) {}
+}
+
+function updateDebugEndpoint() {
+    if (!GF || !GF.getDebugEndpoint) return;
+    try {
+        var e = JSON.parse(GF.getDebugEndpoint() || '{}');
+        var label = document.getElementById('about-debug-endpoint');
+        if (!label) return;
+        if (e.port && e.port !== '-1' && e.ip) label.textContent = 'adb connect ' + e.ip + ':' + e.port;
+        else label.textContent = '';
+    } catch (_) {}
+}
+
+function onDebugToggle(btn) {
+    var enable = !btn.classList.contains('active');
+    btn.classList.toggle('active', enable);
+    if (GF && GF.setDebug) GF.setDebug(enable);
+    setTimeout(updateDebugEndpoint, 800);
+}
+
+function onAboutReboot() {
+    if (!confirm('Reboot the tablet now?')) return;
+    if (GF && GF.reboot) GF.reboot();
+}
+
+// ── Settings load / save ────────────────────────────────────
+// Each settings section POSTs to its own endpoint, not to /api/config,
+// so the tablet never has to rebuild the full config document client-
+// side. Machine → /api/machine, zones → /api/zones, cameras →
+// /api/cameras + /api/cameras/{id}/pose. Alerts/display are tablet-
+// local and live on the GFAndroid bridge.
+function loadSettingsFields() {
+    fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
+        cfg = cfg || {};
+        _setVal('set-machine-name', cfg.machine_name || '');
+        _setVal('set-machine-type', cfg.machine_type || 'wheel_loader');
+        var fp = cfg.machine_footprint_m || { length: 8.0, width: 2.5 };
+        var lenM = fp.length != null ? Number(fp.length) : 8.0;
+        var widM = fp.width  != null ? Number(fp.width)  : 2.5;
+        window._machineFootprintM = { length: lenM, width: widM };
+        _setVal('set-machine-length', fmtNum(mToDisp(lenM)));
+        _setVal('set-machine-width',  fmtNum(mToDisp(widM)));
+        relabelMachineInputs();
+
+        // Zones — two concentric circles centred on the machine. If a
+        // saved config has other geometry we still hydrate the radii
+        // from whichever entry carries the matching color. Server
+        // stores meters; UI shows display unit so we cache the meter
+        // values on window._zoneRadiiM and re-seed on a unit flip.
+        var redZone = _findZoneByLabel(cfg.zones, 'red');
+        var yellowZone = _findZoneByLabel(cfg.zones, 'yellow');
+        var dM = redZone  ? redZone.r_m  : 3.5;
+        var wM = yellowZone ? yellowZone.r_m : 6.0;
+        window._zoneRadiiM = { red: dM, yellow: wM, danger: dM, warning: wM };
+        _setVal('set-zone-danger',  fmtNum(mToDisp(dM)));
+        _setVal('set-zone-warning', fmtNum(mToDisp(wM)));
+        relabelZoneInputs();
+
+        // Detection update-rate cap. Zero means uncapped.
+        var tfps = (cfg.target_fps != null) ? Number(cfg.target_fps) : 10;
+        var tfpsEl = document.getElementById('set-target-fps');
+        if (tfpsEl) {
+            // Pick the closest matching <option> — saved value might not
+            // match a preset exactly if it was set from somewhere else.
+            var match = null;
+            for (var i = 0; i < tfpsEl.options.length; i++) {
+                if (Number(tfpsEl.options[i].value) === tfps) { match = tfpsEl.options[i].value; break; }
+            }
+            tfpsEl.value = match != null ? match : '10';
+        }
+
+        var br = (GF && GF.getBrightness) ? GF.getBrightness() : 80;
+        _setVal('set-brightness', br);
+        var brLbl = document.getElementById('set-brightness-label');
+        if (brLbl) brLbl.textContent = br + '%';
+        var vol = (GF && GF.getVolume) ? GF.getVolume() : 80;
+        _setVal('set-volume', vol);
+        var volLbl = document.getElementById('set-volume-label');
+        if (volLbl) volLbl.textContent = vol + '%';
+
+        refreshNetworkStatus();
+        loadAboutTab();
+        bindAutoSave();
+    }).catch(function() {});
+}
+
+function _setVal(id, v) { var el = document.getElementById(id); if (el) el.value = v; }
+function _val(id, fallback) { var el = document.getElementById(id); return el ? el.value : fallback; }
+function _num(id, fallback) {
+    var v = parseFloat(_val(id, fallback));
+    return isFinite(v) ? v : fallback;
+}
+
+function _findZoneByLabel(zones, label) {
+    if (!zones || !zones.length) return null;
+    for (var i = 0; i < zones.length; i++) {
+        if (zones[i] && configZoneName(zones[i]) === label) return zones[i];
+    }
+    return null;
+}
+
+var _autoSaveTimers = {};
+function _debounce(key, fn, ms) {
+    if (_autoSaveTimers[key]) clearTimeout(_autoSaveTimers[key]);
+    _autoSaveTimers[key] = setTimeout(fn, ms || 500);
+}
+
+function autoSaveMachine() {
+    _debounce('machine', function() {
+        var dispLen = _num('set-machine-length', mToDisp(8.0));
+        var dispWid = _num('set-machine-width',  mToDisp(2.5));
+        var lenM = dispToM(dispLen);
+        var widM = dispToM(dispWid);
+        window._machineFootprintM = { length: lenM, width: widM };
+        var body = {
+            machine_name: _val('set-machine-name', ''),
+            machine_type: _val('set-machine-type', 'wheel_loader'),
+            machine_footprint_m: { length: lenM, width: widM }
+        };
+        fetch('/api/machine', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).then(function(r) { return r.json(); }).then(function() {
+            showSaveToast('Saved');
+            if (window.reloadConfig) window.reloadConfig();
+        }).catch(function() { showSaveToast('Save failed'); });
+    });
+}
+
+function autoSaveTargetFps() {
+    _debounce('targetFps', function() {
+        var fps = Number(_val('set-target-fps', '10'));
+        if (!isFinite(fps) || fps < 0) fps = 10;
+        fetch('/api/runtime', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_fps: fps })
+        }).then(function(r) { return r.json(); })
+          .then(function() { showSaveToast('Saved'); })
+          .catch(function() { showSaveToast('Save failed'); });
+    });
+}
+
+function autoSaveZones() {
+    _debounce('zones', function() {
+        // Inputs are in the operator's display unit; the wire format is
+        // always meters, so convert before posting and update the cache
+        // that drives unit-flip re-seed.
+        var dispD = _num('set-zone-danger',  mToDisp(3.5));
+        var dispW = _num('set-zone-warning', mToDisp(6.0));
+        var dM = dispToM(dispD);
+        var wM = dispToM(dispW);
+        window._zoneRadiiM = { red: dM, yellow: wM, danger: dM, warning: wM };
+        var body = {
+            zones: [
+                { id: 'red-inner', label: 'red', zone: 'red', color: 'red', display_color: 'red', severity_code: 3, cx_m: 0, cy_m: 0, r_m: dM },
+                { id: 'yellow-outer', label: 'yellow', zone: 'yellow', color: 'yellow', display_color: 'yellow', severity_code: 2, cx_m: 0, cy_m: 0, r_m: wM }
+            ]
+        };
+        fetch('/api/zones', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).then(function(r) { return r.json(); }).then(function() {
+            showSaveToast('Zones saved');
+            if (window.reloadConfig) window.reloadConfig();
+        }).catch(function() { showSaveToast('Save failed'); });
+    });
+}
+
+// Keep the old name so in-DOM oninput handlers on alerts/display fields
+// don't crash — those sections are tablet-local and persisted via the
+// GFAndroid bridge, so an empty body here is the right no-op.
+function autoSaveSettings() { /* no-op — tablet-local prefs use GFAndroid */ }
+
+function saveSettings() { autoSaveMachine(); autoSaveZones(); }
+
+function bindAutoSave() {
+    var machineIds = ['set-machine-name', 'set-machine-type',
+                      'set-machine-length', 'set-machine-width'];
+    machineIds.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (!el || el.dataset.autosaveBound) return;
+        el.dataset.autosaveBound = '1';
+        el.addEventListener('input', autoSaveMachine);
+        el.addEventListener('change', autoSaveMachine);
+    });
+    // Zones inputs already call autoSaveZones inline via oninput.
+}
+
+function resetSettings() {
+    if (!confirm('Reset machine profile and zones to defaults?')) return;
+    _setVal('set-machine-name', '');
+    _setVal('set-machine-type', 'wheel_loader');
+    _setVal('set-machine-length', fmtNum(mToDisp(8.0)));
+    _setVal('set-machine-width',  fmtNum(mToDisp(2.5)));
+    _setVal('set-zone-danger',  fmtNum(mToDisp(3.5)));
+    _setVal('set-zone-warning', fmtNum(mToDisp(6.0)));
+    autoSaveMachine();
+    autoSaveZones();
+    showSaveToast('Reset');
+}
+
+// == Cameras panel (per-camera pose editor) ======================
+// The tablet is authoritative for every camera's mount pose. Each
+// field auto-saves via POST /api/cameras/{id}/pose, which mutates
+// the single camera in ConfigStore and pushes the resulting config
+// to that camera over UDP (port 5557). Add/remove go through
+// POST /api/cameras (full-array replace) because the server only
+// takes the whole installed_cameras array for structural changes.
+//
+// There is no auto-discovery scanner in this build: OAK-Ds only
+// show up here after the operator taps Add, enters their LAN IP,
+// and the first config push round-trips.
+
+function loadCamerasTab() {
+    fetch('/api/config')
+        .then(function(r) { return r.json(); })
+        .then(function(cfg) {
+            if (window.GF_CFG) {
+                GF_CFG.installed_cameras = cfg.installed_cameras || [];
+            }
+            renderCamerasGrid(cfg.installed_cameras || []);
+        })
+        .catch(function() {
+            renderCamerasGrid((window.GF_CFG && GF_CFG.installed_cameras) || []);
+        });
+}
+
+function renderCamerasGrid(cams) {
+    var grid = document.getElementById('cameras-grid');
+    if (!grid) return;
+    if (!cams.length) {
+        grid.innerHTML =
+            '<div style="padding:24px; border:1px dashed hsl(var(--border)); border-radius: var(--radius); text-align:center; font-size:13px; color: hsl(var(--muted-foreground));">' +
+            'No cameras yet. Tap <b>+ Add</b> and enter the OAK-D\'s LAN IP.' +
+            '</div>';
+        return;
+    }
+    grid.innerHTML = cams.map(_camCardHtml).join('');
+}
+
+function _esc(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function _camCardHtml(cam) {
+    var id = _esc(cam.id || '');
+    var label = _esc(cam.label || cam.id || 'Camera');
+    var deviceId = _esc(cam.device_id || '');
+    var pos = cam.position_m || [0, 0, 0];
+    var px = Number(pos[0] || 0);
+    var py = Number(pos[1] || 0);
+    var pz = Number(pos[2] || 0);
+    var yaw = Number(cam.yaw_deg || 0);
+    var hfov = Number(cam.hfov_deg || 127);
+    var maxR = Number(cam.max_range_m || 12);
+    var u = unitLabel();
+    return (
+        '<div class="cam-card" data-cam-id="' + id + '" ' +
+            'style="padding:16px; background: hsl(var(--background)); border:1px solid hsl(var(--border)); border-radius: var(--radius); display:flex; flex-direction:column; gap:12px;">' +
+            '<div style="display:flex; align-items:center; gap:10px;">' +
+                '<input type="text" value="' + label + '" ' +
+                       'onchange="_savePoseField(\'' + id + '\', \'label\', this.value)" ' +
+                       'style="flex:1; min-width:0; background:transparent; border:none; border-bottom:1px solid transparent; padding:2px 0; font-size:15px; font-weight:600; color: hsl(var(--foreground)); outline:none; letter-spacing:-0.01em;" ' +
+                       'onfocus="this.style.borderBottomColor=\'hsl(var(--ring))\'" ' +
+                       'onblur="this.style.borderBottomColor=\'transparent\'" />' +
+                '<button title="Remove camera" onclick="removeCamera(\'' + id + '\')" ' +
+                        'style="flex-shrink:0; background:transparent; border:none; color: hsl(var(--muted-foreground)); cursor:pointer; padding:4px 6px; border-radius:6px; font-size:16px; line-height:1;" ' +
+                        'onmouseover="this.style.background=\'hsl(var(--destructive)/0.1)\'; this.style.color=\'hsl(var(--destructive))\'" ' +
+                        'onmouseout="this.style.background=\'transparent\'; this.style.color=\'hsl(var(--muted-foreground))\'">\u00d7</button>' +
+            '</div>' +
+            '<div class="gf-field" style="margin:0;">' +
+                '<label class="gf-label">Device IP</label>' +
+                '<input class="gf-input" type="text" value="' + deviceId + '" placeholder="169.254.1.222" ' +
+                       'onchange="_savePoseField(\'' + id + '\', \'device_id\', this.value)" />' +
+            '</div>' +
+            '<div>' +
+                '<div class="gf-label" style="margin-bottom:6px;">Mount position (' + u + ') \u2014 from machine origin</div>' +
+                '<div class="gf-row" style="gap:6px;">' +
+                    _distInput(id, 'position_m[0]', 'X (right+)', px) +
+                    _distInput(id, 'position_m[1]', 'Y (forward+)', py) +
+                    _distInput(id, 'position_m[2]', 'Z (up+)', pz) +
+                '</div>' +
+            '</div>' +
+            '<div class="gf-row" style="gap:6px;">' +
+                _numInput(id, 'yaw_deg', 'Yaw (\u00b0)', yaw) +
+                _numInput(id, 'hfov_deg', 'HFOV (\u00b0)', hfov) +
+                _distInput(id, 'max_range_m', 'Max range (' + u + ')', maxR) +
+            '</div>' +
+        '</div>'
+    );
+}
+
+// Plain numeric field (degrees, etc.) — values stored verbatim.
+function _numInput(camId, path, label, value) {
+    return (
+        '<div class="gf-field" style="margin:0; flex:1; min-width:0;">' +
+            '<label class="gf-label">' + _esc(label) + '</label>' +
+            '<input class="gf-input" type="number" step="0.1" value="' + Number(value).toFixed(2) + '" ' +
+                   'onchange="_savePoseField(\'' + camId + '\', \'' + path + '\', this.value)" />' +
+        '</div>'
+    );
+}
+
+// Distance field — server holds meters, operator sees current display
+// unit. data-unit-field marks it so a unit flip can re-render.
+function _distInput(camId, path, label, valueM) {
+    var disp = mToDisp(valueM);
+    return (
+        '<div class="gf-field" style="margin:0; flex:1; min-width:0;">' +
+            '<label class="gf-label">' + _esc(label) + '</label>' +
+            '<input class="gf-input" data-unit-field="dist" type="number" step="' + unitStep() + '" value="' + fmtNum(disp) + '" ' +
+                   'onchange="_savePoseField(\'' + camId + '\', \'' + path + '\', this.value, true)" />' +
+        '</div>'
+    );
+}
+
+function _savePoseField(camId, field, raw, isDistance) {
+    var body = {};
+    if (field.indexOf('position_m[') === 0) {
+        var card = document.querySelector('.cam-card[data-cam-id="' + camId + '"]');
+        if (!card) return;
+        var inputs = card.querySelectorAll('input[onchange*="position_m["]');
+        var vec = [0, 0, 0];
+        inputs.forEach(function(el) {
+            var m = /position_m\[(\d)\]/.exec(el.getAttribute('onchange') || '');
+            // Inputs hold display units; convert each axis to meters.
+            if (m) vec[Number(m[1])] = dispToM(Number(el.value) || 0);
+        });
+        body.position_m = vec;
+    } else if (field === 'label' || field === 'device_id') {
+        body[field] = String(raw || '').trim();
+    } else {
+        var num = Number(raw);
+        if (!isFinite(num)) return;
+        body[field] = isDistance ? dispToM(num) : num;
+    }
+    fetch('/api/cameras/' + encodeURIComponent(camId) + '/pose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    }).then(function(r) { return r.json(); })
+      .then(function() {
+          showSaveToast('Saved');
+          if (window.reloadConfig) window.reloadConfig();
+      })
+      .catch(function() { showSaveToast('Save failed'); });
+}
+
+function addCamera() {
+    var existing = (window.GF_CFG && GF_CFG.installed_cameras) || [];
+    var nextIdx = existing.length;
+    var newCam = {
+        id: 'cam-' + Date.now().toString(36),
+        label: 'Camera ' + (nextIdx + 1),
+        device_id: '',
+        position_m: [0.0, nextIdx === 0 ? 4.0 : 0.0, 2.0],
+        yaw_deg: 0.0,
+        pitch_deg: 0.0,
+        roll_deg: 0.0,
+        hfov_deg: 127.0,
+        max_range_m: 12.0
+    };
+    _postCameras(existing.concat([newCam]));
+}
+
+function removeCamera(camId) {
+    if (!confirm('Remove this camera from the machine?')) return;
+    var existing = (window.GF_CFG && GF_CFG.installed_cameras) || [];
+    var next = existing.filter(function(c) { return c && c.id !== camId; });
+    _postCameras(next);
+}
+
+function _postCameras(cams) {
+    fetch('/api/cameras', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ installed_cameras: cams }),
+    }).then(function(r) { return r.json(); })
+      .then(function() {
+          if (window.GF_CFG) GF_CFG.installed_cameras = cams;
+          renderCamerasGrid(cams);
+          if (window.reloadConfig) window.reloadConfig();
+      })
+      .catch(function() { showSaveToast('Save failed'); });
+}
+
+// ── Distance units (m vs ft) ─────────────────────────────
+// Persisted in localStorage so the operator's preference survives
+// reloads. Stored as the unit string ('m' or 'ft'); the display layer
+// reads gf_units and formats with formatDist(). Server-side config
+// (zones, camera positions, max_range) always stays in meters — the
+// UI converts on render and on save.
+var distUnits = localStorage.getItem('gf_units') || 'ft';
+var distDecimals = parseInt(localStorage.getItem('gf_decimals') || '0', 10);
+if (!(distDecimals >= 0 && distDecimals <= 2)) distDecimals = 0;
+var FT_PER_M = 3.28084;
+
+function mToDisp(m) {
+    var n = Number(m);
+    if (!isFinite(n)) return 0;
+    return distUnits === 'ft' ? n * FT_PER_M : n;
+}
+function dispToM(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return 0;
+    return distUnits === 'ft' ? n / FT_PER_M : n;
+}
+function unitLabel() { return distUnits === 'ft' ? 'ft' : 'm'; }
+function unitStep()  { return distUnits === 'ft' ? '0.5' : '0.1'; }
+function fmtNum(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return '0';
+    return n.toFixed(distDecimals);
+}
+
+function setUnits(u) {
+    if (u !== 'm' && u !== 'ft') return;
+    distUnits = u;
+    localStorage.setItem('gf_units', u);
+    updateUnitsToggle();
+    refreshUnitDependentUI();
+    // Propagate to the server so registered cab displays (ESP32 AMOLEDs)
+    // pick up the change on their next broadcast tick. Fire-and-forget —
+    // a transient network error shouldn't revert the operator's toggle.
+    try {
+        fetch('/api/units', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({units: u})
+        }).catch(function() {});
+    } catch (e) {}
+}
+function setDecimals(n) {
+    n = parseInt(n, 10);
+    if (!(n >= 0 && n <= 2)) return;
+    distDecimals = n;
+    localStorage.setItem('gf_decimals', String(n));
+    updateDecimalsToggle();
+    refreshUnitDependentUI();
+}
+function updateUnitsToggle() {
+    var nodes = document.querySelectorAll('.units-toggle');
+    nodes.forEach(function(n) {
+        if (n.getAttribute('data-units') === distUnits) n.classList.add('active');
+        else n.classList.remove('active');
+    });
+}
+function updateDecimalsToggle() {
+    var nodes = document.querySelectorAll('.decimals-toggle');
+    nodes.forEach(function(n) {
+        if (n.getAttribute('data-decimals') === String(distDecimals)) n.classList.add('active');
+        else n.classList.remove('active');
+    });
+}
+// Re-render every distance-bearing element when the unit or decimal
+// preference changes. Settings inputs hold values in the *display* unit,
+// so we have to relabel and reseed them or stale numbers persist.
+function refreshUnitDependentUI() {
+    if (typeof currentDetections !== 'undefined') {
+        updateCabDisplay(currentDetections);
+    }
+    var nearestEl = document.getElementById('hud-nearest');
+    if (nearestEl && window._lastClosestM != null) {
+        nearestEl.textContent = formatDist(window._lastClosestM);
+    }
+    relabelZoneInputs();
+    reseedZoneInputs();
+    relabelMachineInputs();
+    reseedMachineInputs();
+    if (typeof loadCamerasTab === 'function') loadCamerasTab();
+}
+function relabelZoneInputs() {
+    var d = document.querySelector('label[for="set-zone-danger"]');
+    if (d) d.textContent = 'Red (' + unitLabel() + ')';
+    var w = document.querySelector('label[for="set-zone-warning"]');
+    if (w) w.textContent = 'Yellow (' + unitLabel() + ')';
+    ['set-zone-danger', 'set-zone-warning'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.step = unitStep();
+    });
+}
+function relabelMachineInputs() {
+    var l = document.querySelector('label[for="set-machine-length"]');
+    if (l) l.textContent = 'Length (' + unitLabel() + ')';
+    var w = document.querySelector('label[for="set-machine-width"]');
+    if (w) w.textContent = 'Width (' + unitLabel() + ')';
+    ['set-machine-length', 'set-machine-width'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.step = unitStep();
+    });
+}
+function reseedMachineInputs() {
+    var fp = window._machineFootprintM;
+    if (!fp) return;
+    var l = document.getElementById('set-machine-length');
+    var w = document.getElementById('set-machine-width');
+    if (l) l.value = fmtNum(mToDisp(fp.length));
+    if (w) w.value = fmtNum(mToDisp(fp.width));
+}
+// The currently-loaded zone radii live on window._zoneRadiiM (in meters).
+// On a unit flip, repopulate the inputs from that source of truth.
+function reseedZoneInputs() {
+    var z = window._zoneRadiiM;
+    if (!z) return;
+    var d = document.getElementById('set-zone-danger');
+    var w = document.getElementById('set-zone-warning');
+    if (d) d.value = fmtNum(mToDisp(z.red != null ? z.red : z.danger));
+    if (w) w.value = fmtNum(mToDisp(z.yellow != null ? z.yellow : z.warning));
+}
+function formatDist(m) {
+    if (m == null || isNaN(m)) return '--';
+    var v = distUnits === 'ft' ? m * FT_PER_M : m;
+    return v.toFixed(distDecimals) + unitLabel();
+}
+updateUnitsToggle();
+updateDecimalsToggle();
+// Push the tablet's cached preference up on page load so any cab display
+// that registered earlier (before this browser opened) gets reconciled.
+try {
+    fetch('/api/units', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({units: distUnits})
+    }).catch(function() {});
+} catch (e) {}
+
+// ── Config mirror ──────────────────────────────────────────
+// Authoritative config lives in the Kotlin ConfigStore and is synced to
+// every camera over UDP. The tablet keeps a local copy purely for
+// rendering (machine footprint, zone rings, camera FOV cones).
+var GF_CFG = {
+    machine_name: '',
+    machine_type: '',
+    machine_footprint_m: { length: 8.0, width: 2.5 },
+    installed_cameras: [],
+    zones: []   // [{id, label:"red|yellow", severity_code, cx_m, cy_m, r_m}, ...]
+};
+
+// ── Radar (cab-display) ────────────────────────────────────
+// The OAK pre-classifies each detection as danger / warning / clear
+// using the same zone list we draw here, so the renderer is now a thin
+// presenter: no client-side hit-testing, no polygon math.
+var CAB_VIEW_PX = 95;              // SVG units from centre to outer ring
+var CAB_CENTER = 100;              // viewBox 0..200 centre
+var CAB_RANGE_M = 12;              // outer ring radius, auto-adjusts to fit zones
+// 1.0 = no smoothing (snap to latest position). The OAK ObjectTracker
+// already smooths positions per-track, so an additional EMA on the JS
+// side just adds visible lag — at 10 fps and lerp 0.35, dots trail a
+// person's actual position by ~1 s. Safety product needs snappy.
+var CAB_LERP = 1.0;
+var CAB_DOT_TTL_MS = 1200;
+
+var ZONE_NONE = 0;      // no detections in the scene
+var ZONE_OUTSIDE = 1;   // detection present, outside configured zones
+var ZONE_YELLOW = 2;    // detection inside yellow zone
+var ZONE_RED = 3;       // detection inside red zone
+
+function zoneNameFromCode(code) {
+    code = Number(code);
+    if (code === ZONE_RED) return 'red';
+    if (code === ZONE_YELLOW) return 'yellow';
+    if (code === ZONE_NONE) return 'none';
+    return 'outside';
+}
+function zoneCodeFromName(name) {
+    var z = String(name || '').toLowerCase();
+    if (z === 'danger' || z === 'red') return ZONE_RED;
+    if (z === 'warning' || z === 'yellow') return ZONE_YELLOW;
+    if (z === 'clear' || z === 'outside' || z === 'none') return ZONE_OUTSIDE;
+    return ZONE_OUTSIDE;
+}
+function zoneCodeFromDetection(det) {
+    if (det && det.zone_code != null && !isNaN(Number(det.zone_code))) {
+        var code = Math.max(ZONE_OUTSIDE, Math.min(ZONE_RED, Number(det.zone_code)));
+        return code;
+    }
+    return zoneCodeFromName(det && (det.zone || det.legacy_zone || det.zone_label || det.color));
+}
+function zoneNameFromDetection(det) {
+    return zoneNameFromCode(zoneCodeFromDetection(det));
+}
+function configZoneName(z) {
+    return zoneNameFromCode(zoneCodeFromName(z && (z.label || z.zone || z.color)));
+}
+
+var cabDots = {};                  // track_id -> { x_m, y_m, lastSeen, nodes }
+var CAB_COLOR = {
+    red:     '#fecaca',
+    yellow:  '#fde68a',
+    outside: '#7dd3fc',
+    danger:  '#fecaca',
+    warning: '#fde68a',
+    clear:   '#7dd3fc'
+};
+
+function _cabScale() { return CAB_VIEW_PX / CAB_RANGE_M; }
+function _cabMapX(x_m) { return CAB_CENTER + x_m * _cabScale(); }
+function _cabMapY(y_m) { return CAB_CENTER - y_m * _cabScale(); }
+
+function _mkSvg(tag, attrs) {
+    var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    if (attrs) Object.keys(attrs).forEach(function(k) { el.setAttribute(k, attrs[k]); });
+    return el;
+}
+
+function renderRadarOverlay() {
+    // Zones are now "X meters from the machine edge" — each zone's outer
+    // extent is half the longer machine axis + zone offset. Auto-fit to
+    // the largest zone so the warning ring never clips out of frame.
+    var fp = GF_CFG.machine_footprint_m || { length: 8, width: 2.5 };
+    var halfLen = (+fp.length || 0) / 2;
+    var halfWid = (+fp.width  || 0) / 2;
+    var biggestHalf = Math.max(halfLen, halfWid);
+    var maxOffset = 0;
+    (GF_CFG.zones || []).forEach(function(z) {
+        var off = +z.r_m || 0;
+        if (off > maxOffset) maxOffset = off;
+    });
+    CAB_RANGE_M = Math.max(12, (biggestHalf + maxOffset) * 1.15);
+    _renderZonesLayer();
+    _renderMachineLayer();
+    _renderFovLayer();
+    _repositionDots();
+}
+window.renderRadarOverlay = renderRadarOverlay;
+
+function _renderZonesLayer() {
+    var g = document.getElementById('cab-zones-layer');
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    var fp = GF_CFG.machine_footprint_m || { length: 8, width: 2.5 };
+    var halfLenM = (+fp.length || 0) / 2;
+    var halfWidM = (+fp.width  || 0) / 2;
+    var scale = _cabScale();
+    // Sort largest-first so yellow draws under red and the red ring
+    // stays visible on top when both are configured.
+    var sorted = (GF_CFG.zones || []).slice().sort(function(a, b) {
+        return (+b.r_m || 0) - (+a.r_m || 0);
+    });
+    sorted.forEach(function(z) {
+        var offM = +z.r_m || 0;
+        if (offM <= 0) return;
+        var zoneName = configZoneName(z);
+        var color = zoneName === 'red' ? '#ef4444'
+                  : zoneName === 'yellow' ? '#f59e0b'
+                  : '#3b82f6';
+        // Rounded-rect "expansion" of the machine outline: width/length
+        // grow by 2*offset, corner radius equals offset. Every point on
+        // this perimeter is exactly offM meters from the machine edge.
+        var rectWPx = (halfWidM + offM) * 2 * scale;
+        var rectHPx = (halfLenM + offM) * 2 * scale;
+        var rxPx = offM * scale;
+        g.appendChild(_mkSvg('rect', {
+            x: (CAB_CENTER - rectWPx / 2).toFixed(2),
+            y: (CAB_CENTER - rectHPx / 2).toFixed(2),
+            width:  rectWPx.toFixed(2),
+            height: rectHPx.toFixed(2),
+            rx: rxPx.toFixed(2),
+            ry: rxPx.toFixed(2),
+            fill: 'none',
+            stroke: color,
+            'stroke-width': '1.2',
+            'stroke-dasharray': zoneName === 'yellow' ? '3 3' : '0',
+            opacity: '0.85'
+        }));
+    });
+}
+
+function _renderMachineLayer() {
+    var g = document.getElementById('cab-machine');
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    var fp = GF_CFG.machine_footprint_m || { length: 8, width: 2.5 };
+    var scale = _cabScale();
+    var halfLenPx = ((+fp.length || 0) / 2) * scale;
+    var halfWidPx = ((+fp.width  || 0) / 2) * scale;
+    if (halfLenPx <= 0 || halfWidPx <= 0) {
+        g.appendChild(_mkSvg('circle', {
+            cx: CAB_CENTER, cy: CAB_CENTER, r: '6',
+            fill: '#333', stroke: '#666', 'stroke-width': '1'
+        }));
+        return;
+    }
+    g.appendChild(_mkSvg('rect', {
+        x: (CAB_CENTER - halfWidPx).toFixed(2),
+        y: (CAB_CENTER - halfLenPx).toFixed(2),
+        width:  (halfWidPx * 2).toFixed(2),
+        height: (halfLenPx * 2).toFixed(2),
+        rx: '2',
+        fill: '#333', stroke: '#666', 'stroke-width': '1'
+    }));
+    var chevronY = CAB_CENTER - halfLenPx - 4;
+    if (chevronY > 2) {
+        g.appendChild(_mkSvg('polygon', {
+            points: CAB_CENTER + ',' + chevronY + ' ' +
+                    (CAB_CENTER - 3) + ',' + (chevronY + 4) + ' ' +
+                    (CAB_CENTER + 3) + ',' + (chevronY + 4),
+            fill: '#60a5fa', opacity: '0.7'
+        }));
+    }
+}
+
+function _renderFovLayer() {
+    var g = document.getElementById('cab-fov-layer');
+    if (!g) return;
+    while (g.firstChild) g.removeChild(g.firstChild);
+    var scale = _cabScale();
+    (GF_CFG.installed_cameras || []).forEach(function(cam) {
+        var pos = cam.position_m || [0, 0, 0];
+        var cx = +pos[0] || 0;
+        var cy = +pos[1] || 0;
+        var yaw = ((+cam.yaw_deg) || 0) * Math.PI / 180;
+        var hfov = ((+cam.hfov_deg) || 127) * Math.PI / 180;
+        var range = Math.min((+cam.max_range_m) || 12, CAB_RANGE_M * 1.5);
+        var px = _cabMapX(cx), py = _cabMapY(cy);
+        // yaw = 0 looks along +y. SVG +y is down, so convert accordingly.
+        var leftAng  = yaw - hfov / 2;
+        var rightAng = yaw + hfov / 2;
+        var tipLx = px + Math.sin(leftAng)  * range * scale;
+        var tipLy = py - Math.cos(leftAng)  * range * scale;
+        var tipRx = px + Math.sin(rightAng) * range * scale;
+        var tipRy = py - Math.cos(rightAng) * range * scale;
+        var rPx = range * scale;
+        var largeArc = (hfov > Math.PI) ? 1 : 0;
+        var d = 'M ' + px.toFixed(2) + ' ' + py.toFixed(2) +
+                ' L ' + tipLx.toFixed(2) + ' ' + tipLy.toFixed(2) +
+                ' A ' + rPx.toFixed(2) + ' ' + rPx.toFixed(2) +
+                ' 0 ' + largeArc + ' 1 ' +
+                tipRx.toFixed(2) + ' ' + tipRy.toFixed(2) +
+                ' Z';
+        g.appendChild(_mkSvg('path', {
+            d: d,
+            fill: 'rgba(96,165,250,0.08)',
+            stroke: 'rgba(96,165,250,0.35)',
+            'stroke-width': '0.8'
+        }));
+        g.appendChild(_mkSvg('circle', {
+            cx: px.toFixed(2), cy: py.toFixed(2), r: '1.6',
+            fill: '#60a5fa'
+        }));
+    });
+}
+
+function _repositionDots() {
+    for (var tid in cabDots) {
+        var d = cabDots[tid];
+        if (!d || !d.nodes) continue;
+        var sx = _cabMapX(d.x_m), sy = _cabMapY(d.y_m);
+        var dxp = sx - CAB_CENTER, dyp = sy - CAB_CENTER;
+        var r = Math.hypot(dxp, dyp);
+        if (r > CAB_VIEW_PX) {
+            var k = CAB_VIEW_PX / r;
+            sx = CAB_CENTER + dxp * k;
+            sy = CAB_CENTER + dyp * k;
+        }
+        ['glow','ring','core'].forEach(function(key) {
+            d.nodes[key].setAttribute('cx', sx.toFixed(1));
+            d.nodes[key].setAttribute('cy', sy.toFixed(1));
+        });
+        d.nodes.label.setAttribute('x', sx.toFixed(1));
+        d.nodes.label.setAttribute('y', (sy > 20 ? sy - 8 : sy + 14).toFixed(1));
+    }
+}
+
+function _cabMakeNodes(grp) {
+    var glow = _mkSvg('circle', { r: '7',   fill: CAB_COLOR.clear, opacity: '0.30' });
+    var ring = _mkSvg('circle', { r: '4.5', fill: CAB_COLOR.clear, filter: 'url(#cab-glow)' });
+    var core = _mkSvg('circle', { r: '2',   fill: '#fff' });
+    var label = _mkSvg('text', {
+        'text-anchor': 'middle', 'font-size': '8',
+        'font-family': 'system-ui, -apple-system, sans-serif',
+        'font-weight': '700', fill: '#fff', stroke: '#000',
+        'stroke-width': '0.5', 'paint-order': 'stroke'
+    });
+    grp.appendChild(glow); grp.appendChild(ring);
+    grp.appendChild(core); grp.appendChild(label);
+    return { glow: glow, ring: ring, core: core, label: label };
+}
+
+function _cabRemoveNodes(d) {
+    if (!d || !d.nodes) return;
+    [d.nodes.glow, d.nodes.ring, d.nodes.core, d.nodes.label].forEach(function(n) {
+        if (n && n.parentNode) n.parentNode.removeChild(n);
+    });
+    d.nodes = null;
+}
+
+// ── Activity log ───────────────────────────────────────────
+// In-memory ring buffer of recent zone-transition + connection events.
+// Survives only as long as the page stays loaded; we deliberately do
+// not persist to disk — operators want a live "what just happened"
+// view, not an audit trail.
+var ACTIVITY_MAX = 200;
+var _activityLog = [];           // newest at index 0
+var _activityPaused = false;
+var _trackZoneCache = {};        // track_id -> last zone we logged
+var _lastConnState = null;       // last connection state we logged
+
+function logActivity(zone, label, dm, camId) {
+    if (_activityPaused) return;
+    _activityLog.unshift({
+        ts:     Date.now(),
+        kind:   'zone',
+        zone:   zone,
+        label:  label || 'object',
+        dist_m: (dm == null || isNaN(dm)) ? null : dm,
+        cam:    camId || ''
+    });
+    if (_activityLog.length > ACTIVITY_MAX) _activityLog.length = ACTIVITY_MAX;
+    _renderActivityLog();
+}
+
+function logConnEvent(state) {
+    if (_activityPaused) return;
+    _activityLog.unshift({
+        ts:    Date.now(),
+        kind:  'conn',
+        state: state
+    });
+    if (_activityLog.length > ACTIVITY_MAX) _activityLog.length = ACTIVITY_MAX;
+    _renderActivityLog();
+}
+
+function _activityTimeStr(ts) {
+    var d = new Date(ts);
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+}
+
+function _renderActivityLog() {
+    var box = document.getElementById('activity-log');
+    if (!box) return;
+    if (_activityLog.length === 0) {
+        box.innerHTML = '<div class="gf-kv-sub" style="padding:8px;">No events yet — waiting for detections.</div>';
+        return;
+    }
+    var rows = [];
+    for (var i = 0; i < _activityLog.length; i++) {
+        var e = _activityLog[i];
+        var t = _activityTimeStr(e.ts);
+        if (e.kind === 'zone') {
+            var eCode = zoneCodeFromName(e.zone);
+            var color = eCode === ZONE_RED ? 'hsl(0 84% 60%)'
+                      : eCode === ZONE_YELLOW ? 'hsl(38 92% 50%)'
+                      : 'hsl(var(--muted-foreground))';
+            var tag = zoneNameFromCode(eCode).toUpperCase();
+            var dist = (e.dist_m == null) ? '' : ' · ' + formatDist(e.dist_m);
+            var cam  = e.cam ? ' · ' + _esc(e.cam) : '';
+            rows.push(
+                '<div style="display:flex; gap:8px; padding:2px 4px;">' +
+                  '<span style="opacity:0.6;">' + t + '</span>' +
+                  '<span style="color:' + color + '; font-weight:600; min-width:62px;">' + tag + '</span>' +
+                  '<span>' + _esc(e.label) + dist + cam + '</span>' +
+                '</div>'
+            );
+        } else if (e.kind === 'conn') {
+            rows.push(
+                '<div style="display:flex; gap:8px; padding:2px 4px; opacity:0.85;">' +
+                  '<span style="opacity:0.6;">' + t + '</span>' +
+                  '<span style="font-weight:600; min-width:62px;">LINK</span>' +
+                  '<span>' + _esc(e.state) + '</span>' +
+                '</div>'
+            );
+        }
+    }
+    box.innerHTML = rows.join('');
+}
+
+function clearActivityLog() {
+    _activityLog = [];
+    _trackZoneCache = {};
+    _renderActivityLog();
+}
+
+function toggleActivityPause() {
+    _activityPaused = !_activityPaused;
+    var btn = document.getElementById('activity-pause');
+    if (btn) btn.textContent = _activityPaused ? 'Resume' : 'Pause';
+}
+
+function updateCabDisplay(detections) {
+    var grp = document.getElementById('cab-detections');
+    if (!grp) return;
+    var now = performance.now();
+    var seen = {};
+    var sceneCode = detections.length ? ZONE_OUTSIDE : ZONE_NONE;
+
+    detections.forEach(function(det) {
+        var xm = +det.x_m || 0;
+        var ym = +det.y_m || 0;
+        var zoneCode = zoneCodeFromDetection(det);
+        var zone = zoneNameFromCode(zoneCode);
+        if (zoneCode > sceneCode) sceneCode = zoneCode;
+        var tid = det.track_id;
+        if (tid == null) {
+            tid = 'u' + (det.label || '?') + '_' +
+                  Math.round(xm * 10) + '_' + Math.round(ym * 10);
+        }
+        seen[tid] = true;
+
+        var d = cabDots[tid];
+        if (!d) {
+            d = { x_m: xm, y_m: ym, lastSeen: now, nodes: _cabMakeNodes(grp) };
+            cabDots[tid] = d;
+        }
+        d.x_m += (xm - d.x_m) * CAB_LERP;
+        d.y_m += (ym - d.y_m) * CAB_LERP;
+        d.lastSeen = now;
+
+        var sx = _cabMapX(d.x_m), sy = _cabMapY(d.y_m);
+        var dxp = sx - CAB_CENTER, dyp = sy - CAB_CENTER;
+        var r = Math.hypot(dxp, dyp);
+        if (r > CAB_VIEW_PX) {
+            var k = CAB_VIEW_PX / r;
+            sx = CAB_CENTER + dxp * k;
+            sy = CAB_CENTER + dyp * k;
+        }
+        var color = CAB_COLOR[zone] || CAB_COLOR.clear;
+        d.nodes.glow.setAttribute('fill', color);
+        d.nodes.ring.setAttribute('fill', color);
+        ['glow','ring','core'].forEach(function(key) {
+            d.nodes[key].setAttribute('cx', sx.toFixed(1));
+            d.nodes[key].setAttribute('cy', sy.toFixed(1));
+        });
+        d.nodes.glow.setAttribute('opacity', '0.30');
+        var dm = det.distance_m != null ? det.distance_m : Math.hypot(d.x_m, d.y_m);
+        d.nodes.label.textContent = formatDist(dm);
+        var labelY = sy > 20 ? sy - 8 : sy + 14;
+        d.nodes.label.setAttribute('x', sx.toFixed(1));
+        d.nodes.label.setAttribute('y', labelY.toFixed(1));
+
+        // Activity log: emit an event when a track ID enters a new zone.
+        // Per-frame log would be a wall of noise, so we cache the last
+        // zone per track and only log on actual transitions.
+        var prevZone = _trackZoneCache[tid];
+        if (prevZone !== zone) {
+            _trackZoneCache[tid] = zone;
+            if (zoneCode >= ZONE_YELLOW ||
+                (prevZone && zoneCodeFromName(prevZone) >= ZONE_YELLOW && zoneCode === ZONE_OUTSIDE)) {
+                logActivity(zone, det.label || 'object', dm, det._cam || '');
+            }
+        }
+    });
+
+    for (var tid in cabDots) {
+        if (seen[tid]) continue;
+        if (now - cabDots[tid].lastSeen > CAB_DOT_TTL_MS) {
+            _cabRemoveNodes(cabDots[tid]);
+            delete cabDots[tid];
+            delete _trackZoneCache[tid];
+        }
+    }
+
+    var bg = document.getElementById('cab-bg-disc');
+    if (bg) {
+        bg.classList.toggle('cab-bg-danger', sceneCode === ZONE_RED);
+        bg.classList.toggle('cab-bg-warn',   sceneCode === ZONE_YELLOW);
+    }
+
+    // Stash the active scene state so updateHud can paint the status pill
+    // with the right color, and trigger audible alarms on transitions.
+    window._lastZoneState = zoneNameFromCode(sceneCode);
+    window._lastSceneStateCode = sceneCode;
+    updateAlarms(sceneCode);
+}
+
+var currentDetections = [];
+
+// Per-camera packet-rate estimate (the OAK doesn't report fps, so the
+// tablet infers it from UDP inter-arrival times).
+var _camStats = {};
+function _updateCamStats(cid) {
+    var now = performance.now();
+    var s = _camStats[cid];
+    if (!s) { _camStats[cid] = { count: 1, lastTs: now, fps: 0 }; return; }
+    s.count += 1;
+    var elapsed = now - s.lastTs;
+    if (elapsed >= 1000) {
+        s.fps = (s.count * 1000) / elapsed;
+        s.count = 0;
+        s.lastTs = now;
+    }
+}
+
+// Merge per-camera packets so multi-camera coverage renders as a single
+// detection stream. Keyed by camera_id — each new packet supersedes the
+// previous one from the same camera.
+var _latestByCamera = {};
+
+// Render coalescing: SSE delivers packets at the OAK send rate, but a
+// slow MTK WebView can't paint that often without thrashing. We buffer
+// the freshest packet per camera and render at most once per rAF tick.
+var _renderScheduled = false;
+function intakePacket(packet) {
+    if (packet && packet.camera_id) {
+        _latestByCamera[packet.camera_id] = packet;
+        _updateCamStats(packet.camera_id);
+    }
+    if (!_renderScheduled) {
+        _renderScheduled = true;
+        requestAnimationFrame(function() {
+            _renderScheduled = false;
+            renderHud();
+        });
+    }
+}
+// Backwards-compat alias for the polling fallback below.
+function updateHud(packet) { intakePacket(packet); }
+
+function renderHud() {
+    var merged = [];
+    var closestM = null;
+    var bestFps = 0;
+    Object.keys(_latestByCamera).forEach(function(cid) {
+        var p = _latestByCamera[cid];
+        (p.detections || []).forEach(function(d) {
+            // Stamp camera_id on each merged detection so the activity
+            // log can attribute events back to the source camera.
+            d._cam = cid;
+            merged.push(d);
+        });
+        var s = p.summary || {};
+        if (s.closest_m != null && (closestM == null || s.closest_m < closestM)) {
+            closestM = s.closest_m;
+        }
+        var cs = _camStats[cid];
+        if (cs && cs.fps > bestFps) bestFps = cs.fps;
+    });
+
+    var fpsEl = document.getElementById('hud-fps');
+    if (fpsEl) fpsEl.textContent = bestFps ? bestFps.toFixed(1) : '0';
+    var nnEl = document.getElementById('hud-nn-fps');
+    if (nnEl) nnEl.textContent = bestFps ? bestFps.toFixed(1) : '0';
+    document.getElementById('hud-count').textContent = merged.length;
+    window._lastClosestM = closestM;
+    document.getElementById('hud-nearest').textContent =
+        closestM != null ? formatDist(closestM) : '--';
+
+    currentDetections = merged;
+    updateCabDisplay(merged);
+
+    var zonePill = document.getElementById('zone-pill');
+    var zoneText = document.getElementById('zone-text');
+    if (zonePill && zoneText) {
+        var stateCode = window._lastSceneStateCode != null ? window._lastSceneStateCode : ZONE_NONE;
+        var cls = stateCode === ZONE_RED ? 'pill-danger'
+                : stateCode === ZONE_YELLOW ? 'pill-warning'
+                : 'pill-clear';
+        zonePill.className = 'status-pill ' + cls;
+        if (merged.length === 0) {
+            zoneText.textContent = 'NO DETECTIONS';
+        } else if (stateCode === ZONE_RED) {
+            zoneText.textContent = 'RED - ' + (closestM != null ? formatDist(closestM) : merged.length);
+        } else if (stateCode === ZONE_YELLOW) {
+            zoneText.textContent = 'YELLOW - ' + (closestM != null ? formatDist(closestM) : merged.length);
+        } else if (closestM != null) {
+            zoneText.textContent = 'TRACKING ' + merged.length + ' · ' + formatDist(closestM);
+        } else {
+            zoneText.textContent = 'TRACKING ' + merged.length;
+        }
+    }
+
+    // Floating overlays — only present when there's something to say.
+    var ovZone = document.getElementById('overlay-zone');
+    var ovZoneText = document.getElementById('overlay-zone-text');
+    var stateNow = window._lastSceneStateCode != null ? window._lastSceneStateCode : ZONE_NONE;
+    if (ovZone && ovZoneText) {
+        ovZone.classList.remove('show', 'show-warning', 'show-danger');
+        if (stateNow === ZONE_RED) {
+            ovZoneText.textContent = 'RED';
+            ovZone.classList.add('show', 'show-danger');
+        } else if (stateNow === ZONE_YELLOW) {
+            ovZoneText.textContent = 'YELLOW';
+            ovZone.classList.add('show', 'show-warning');
+        }
+    }
+    var ovNear = document.getElementById('overlay-nearest');
+    var ovNearText = document.getElementById('overlay-nearest-text');
+    if (ovNear && ovNearText) {
+        if (closestM != null) {
+            ovNearText.textContent = formatDist(closestM);
+            ovNear.classList.add('show');
+        } else {
+            ovNear.classList.remove('show');
+        }
+    }
+}
+
+var sse = new EventSource('/api/spatial/stream');
+sse.onmessage = function(e) {
+    try { updateHud(JSON.parse(e.data)); } catch (err) {}
+};
+sse.onerror = function() {
+    sse.close();
+    setInterval(function() {
+        fetch('/api/spatial').then(function(r) { return r.json(); })
+            .then(updateHud).catch(function() {});
+    }, 500);
+};
+
+// ── Config hydration ───────────────────────────────────────
+function reloadConfig() {
+    return fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
+        GF_CFG.machine_name        = cfg.machine_name || '';
+        GF_CFG.machine_type        = cfg.machine_type || '';
+        GF_CFG.machine_footprint_m = cfg.machine_footprint_m || { length: 8.0, width: 2.5 };
+        GF_CFG.installed_cameras   = cfg.installed_cameras || [];
+        GF_CFG.zones               = cfg.zones || [];
+        renderRadarOverlay();
+        return cfg;
+    }).catch(function() {});
+}
+window.reloadConfig = reloadConfig;
+reloadConfig();
+
+// ── Camera status pill ─────────────────────────────────────
+var PILL_LABELS = {
+    connecting: { label: 'CONNECTING', cls: 'pill-conn-wait' },
+    error:      { label: 'ERROR',      cls: 'pill-conn-err'  },
+    no_camera:  { label: 'NO CAMERA',  cls: 'pill-conn-err'  },
+    connected:  { label: 'LIVE',       cls: 'pill-conn-ok'   }
+};
+var _disconnectedSince = null;
+function setCameraStatus(status) {
+    var pill = document.getElementById('conn-pill');
+    var pillTxt = document.getElementById('conn-text');
+    var state = status && status.state || 'connecting';
+    var info = PILL_LABELS[state] || PILL_LABELS.connecting;
+    pill.className = 'status-pill ' + info.cls;
+    // Append an elapsed-time counter to the pill while the camera link is
+    // down — gives the operator a "system is still trying" cue during the
+    // OAK's 15-25s cold-boot after a power-cycle, vs. wondering if it
+    // hung. Resets the moment the link comes back.
+    if (state !== 'connected') {
+        if (_disconnectedSince == null) _disconnectedSince = Date.now();
+        var secs = Math.floor((Date.now() - _disconnectedSince) / 1000);
+        pillTxt.textContent = info.label + ' · ' + secs + 's';
+    } else {
+        _disconnectedSince = null;
+        pillTxt.textContent = info.label;
+    }
+    // Floating overlay — visible only when something is wrong. The
+    // "connecting" state shows briefly on boot then resolves; "ok"
+    // hides the overlay entirely so the screen stays bare.
+    var ov = document.getElementById('overlay-conn');
+    var ovText = document.getElementById('overlay-conn-text');
+    if (ov && ovText) {
+        ov.classList.remove('show', 'pill-conn-wait', 'pill-conn-err');
+        if (info.cls === 'pill-conn-err' || info.cls === 'pill-conn-wait') {
+            ovText.textContent = info.label;
+            ov.classList.add('show', info.cls);
+        }
+    }
+    if (state !== _lastConnState) {
+        if (_lastConnState !== null) logConnEvent(info.label || state);
+        _lastConnState = state;
+    }
+    // When the camera link is lost the backend keeps replaying the last
+    // UDP payload, which renders as ghost detections from before the
+    // disconnect. Clear the per-camera cache so a disconnected radar
+    // actually goes empty instead of freezing on the last frame.
+    if (state !== 'connected') {
+        _latestByCamera = {};
+        if (typeof renderHud === 'function') renderHud();
+    }
+}
+function pollCameraStatus() {
+    fetch('/api/camera/status').then(function(r) { return r.json(); })
+        .then(setCameraStatus)
+        .catch(function() { setCameraStatus({ state: 'error' }); });
+}
+// Poll faster (was 1500ms) so the pill reacts within ~500ms of a disconnect.
+setInterval(pollCameraStatus, 500);
+pollCameraStatus();
+
+// ── Themed in-page keyboard ─────────────────────────────
+// The system IME on this MTK kiosk is the stock AOSP one and clashes
+// hard with the dark theme. Suppressing it via inputmode=none and
+// rendering our own keys keeps visual consistency and avoids needing
+// to install a custom IME (which would need a separate signed APK +
+// the user enabling it in Settings).
+var gfKbd = (function () {
+    var root = null;
+    var target = null;
+    var shift = false;
+    var symbols = false;
+
+    var ROWS_ALPHA = [
+        ['1','2','3','4','5','6','7','8','9','0'],
+        ['q','w','e','r','t','y','u','i','o','p'],
+        ['a','s','d','f','g','h','j','k','l'],
+        ['__SHIFT','z','x','c','v','b','n','m','__BACK'],
+        ['__SYM','-','__SPACE','.','__HIDE','__RET']
+    ];
+    var ROWS_SYM = [
+        ['1','2','3','4','5','6','7','8','9','0'],
+        ['@','#','$','_','&','-','+','(',')','/'],
+        ['*','"','\'',':',';','!','?',',','='],
+        ['__ABC','%','~','`','{','}','[',']','__BACK'],
+        ['__SYM','<','__SPACE','>','__HIDE','__RET']
+    ];
+    var ROWS_NUMERIC = [
+        ['1','2','3'],
+        ['4','5','6'],
+        ['7','8','9'],
+        ['-','0','.'],
+        ['__BACK','__HIDE','__RET']
+    ];
+
+    function isTextish(el) {
+        if (!el) return false;
+        if (el.tagName === 'TEXTAREA') return true;
+        if (el.tagName !== 'INPUT') return false;
+        var t = (el.type || 'text').toLowerCase();
+        return ['text','search','password','email','url','tel','number'].indexOf(t) !== -1;
+    }
+
+    function isNumericInput(el) {
+        if (!el || el.tagName !== 'INPUT') return false;
+        return (el.type || '').toLowerCase() === 'number';
+    }
+
+    function suppressSystemKbd(el) {
+        if (!isTextish(el)) return;
+        if (el.getAttribute('inputmode') !== 'none') {
+            el.setAttribute('inputmode', 'none');
+        }
+    }
+
+    function suppressAll() {
+        var nodes = document.querySelectorAll('input, textarea');
+        for (var i = 0; i < nodes.length; i++) suppressSystemKbd(nodes[i]);
+    }
+
+    function build() {
+        root = document.createElement('div');
+        root.className = 'gf-kbd';
+        root.id = 'gf-kbd';
+        // Keep the input focused — pressing a key shouldn't blur the target
+        // (otherwise selectionStart goes to 0 / null on some inputs).
+        root.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        root.addEventListener('pointerdown', onKeyPress);
+        root.addEventListener('click', function (e) {
+            // Pointerdown handles the key before WebView can blur the input.
+            // Swallow the follow-up click so taps do not double-insert.
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        document.body.appendChild(root);
+    }
+
+    function keyLabel(code) {
+        if (code === '__SHIFT')  return svgArrowUp();
+        if (code === '__BACK')   return svgBackspace();
+        if (code === '__SYM')    return symbols ? 'ABC' : '!#?';
+        if (code === '__ABC')    return 'ABC';
+        if (code === '__HIDE')   return svgChevronDown();
+        if (code === '__RET')    return 'return';
+        if (code === '__SPACE')  return 'space';
+        if (code.length === 1 && /[a-z]/.test(code)) return shift ? code.toUpperCase() : code;
+        return code;
+    }
+
+    function keyClass(code) {
+        if (code === '__SHIFT') return 'gf-key wide toggle' + (shift ? ' active' : '');
+        if (code === '__SYM')   return 'gf-key wide toggle' + (symbols ? ' active' : '');
+        if (code === '__ABC')   return 'gf-key wide';
+        if (code === '__BACK')  return 'gf-key wide';
+        if (code === '__HIDE')  return 'gf-key wide';
+        if (code === '__RET')   return 'gf-key wide accent';
+        if (code === '__SPACE') return 'gf-key xwide';
+        return 'gf-key';
+    }
+
+    function svgArrowUp() {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 14 12 8 18 14"></polyline><line x1="12" y1="8" x2="12" y2="20"></line></svg>';
+    }
+    function svgBackspace() {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 5H8l-6 7 6 7h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z"></path><line x1="18" y1="9" x2="12" y2="15"></line><line x1="12" y1="9" x2="18" y2="15"></line></svg>';
+    }
+    function svgChevronDown() {
+        return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+    }
+
+    function render() {
+        var rows;
+        if (numericMode()) rows = ROWS_NUMERIC;
+        else rows = symbols ? ROWS_SYM : ROWS_ALPHA;
+        root.classList.toggle('gf-kbd-numeric', numericMode());
+        var html = '';
+        for (var r = 0; r < rows.length; r++) {
+            html += '<div class="gf-kbd-row">';
+            for (var i = 0; i < rows[r].length; i++) {
+                var code = rows[r][i];
+                html += '<button class="' + keyClass(code) + '" data-key="' + code + '" tabindex="-1">' + keyLabel(code) + '</button>';
+            }
+            html += '</div>';
+        }
+        root.innerHTML = html;
+    }
+
+    function numericMode() { return isNumericInput(target); }
+
+    function onKeyPress(e) {
+        var btn = e.target.closest('.gf-key');
+        if (!btn || !target) return;
+        var code = btn.getAttribute('data-key');
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (code === '__SHIFT') { shift = !shift; render(); return; }
+        if (code === '__SYM')   { symbols = !symbols; render(); return; }
+        if (code === '__ABC')   { symbols = false; render(); return; }
+        if (code === '__HIDE')  { hide(); return; }
+        if (code === '__BACK')  { backspace(); return; }
+        if (code === '__RET')   { commitReturn(); return; }
+        if (code === '__SPACE') { insert(' '); return; }
+
+        var ch = code;
+        if (ch.length === 1 && /[a-z]/.test(ch) && shift) ch = ch.toUpperCase();
+        insert(ch);
+        if (shift) { shift = false; render(); }
+    }
+
+    function insert(ch) {
+        if (!target) return;
+        var t = target;
+        if (t.tagName === 'INPUT' && (t.type || '').toLowerCase() === 'number') {
+            // The number input doesn't expose selectionStart in WebView —
+            // append/replace via .value and dispatch input.
+            var raw = (t.value || '') + ch;
+            t.value = raw;
+        } else {
+            var s = t.selectionStart, e = t.selectionEnd;
+            if (s == null) {
+                t.value = (t.value || '') + ch;
+            } else {
+                var v = t.value || '';
+                t.value = v.slice(0, s) + ch + v.slice(e);
+                var pos = s + ch.length;
+                try { t.setSelectionRange(pos, pos); } catch (_) {}
+            }
+        }
+        fireInput(t);
+    }
+
+    function backspace() {
+        if (!target) return;
+        var t = target;
+        if (t.tagName === 'INPUT' && (t.type || '').toLowerCase() === 'number') {
+            var v = t.value || '';
+            t.value = v.slice(0, -1);
+        } else {
+            var s = t.selectionStart, e = t.selectionEnd;
+            var v2 = t.value || '';
+            if (s == null) {
+                t.value = v2.slice(0, -1);
+            } else if (s !== e) {
+                t.value = v2.slice(0, s) + v2.slice(e);
+                try { t.setSelectionRange(s, s); } catch (_) {}
+            } else if (s > 0) {
+                t.value = v2.slice(0, s - 1) + v2.slice(e);
+                try { t.setSelectionRange(s - 1, s - 1); } catch (_) {}
+            }
+        }
+        fireInput(t);
+    }
+
+    function commitReturn() {
+        if (!target) return;
+        if (target.tagName === 'TEXTAREA') { insert('\n'); return; }
+        // Fire a synthetic Enter so any onkeydown=Enter handlers run, then hide.
+        var ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true });
+        target.dispatchEvent(ev);
+        // Try to find a primary action button in the same form/section.
+        hide();
+    }
+
+    function fireInput(t) {
+        try { t.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+        try { t.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
+    }
+
+    function show(input) {
+        if (!root) build();
+        target = input;
+        console.log('[KBD] show target=' + (input.id || input.tagName) + ' type=' + input.type);
+        suppressSystemKbd(input);
+        symbols = false;
+        shift = isNumericInput(input) ? false : false;
+        render();
+        // Defer the visibility class one frame so the slide-up transition runs.
+        requestAnimationFrame(function () {
+            root.classList.add('visible');
+            document.body.classList.add('gf-kbd-open');
+        });
+    }
+
+    function hide() {
+        if (!root) return;
+        root.classList.remove('visible');
+        document.body.classList.remove('gf-kbd-open');
+        if (target) {
+            try { target.blur(); } catch (_) {}
+        }
+        target = null;
+    }
+
+    function init() {
+        suppressAll();
+        // Watch for inputs that get added later (settings overlay, camera rows, etc.)
+        try {
+            var mo = new MutationObserver(function (muts) {
+                for (var i = 0; i < muts.length; i++) {
+                    var m = muts[i];
+                    for (var j = 0; j < m.addedNodes.length; j++) {
+                        var n = m.addedNodes[j];
+                        if (n.nodeType !== 1) continue;
+                        if (isTextish(n)) suppressSystemKbd(n);
+                        if (n.querySelectorAll) {
+                            var sub = n.querySelectorAll('input, textarea');
+                            for (var k = 0; k < sub.length; k++) suppressSystemKbd(sub[k]);
+                        }
+                    }
+                }
+            });
+            mo.observe(document.body, { childList: true, subtree: true });
+        } catch (_) {}
+
+        document.addEventListener('focusin', function (e) {
+            if (isTextish(e.target)) {
+                suppressSystemKbd(e.target);
+                show(e.target);
+            }
+        });
+        document.addEventListener('focusout', function (e) {
+            // Defer — focus may move to another input or to a key. If the
+            // next focused element is another textish input, show() will
+            // re-target. If it's nothing, hide.
+            setTimeout(function () {
+                var ae = document.activeElement;
+                if (!isTextish(ae)) hide();
+            }, 60);
+        });
+    }
+
+    return { init: init, show: show, hide: hide };
+})();
+gfKbd.init();
+</script>
 </body>
 </html>

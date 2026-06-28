@@ -18,6 +18,8 @@ from detection_state import (
 )
 from machine_profiles import get_machine_profile, get_all_profiles, get_detection_classes
 from pipeline.model_registry import list_models, get_model, MODELS
+from pipeline.camera_scanner import scanner as camera_scanner
+from display_broadcaster import broadcaster as display_broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,22 @@ DEFAULT_CONFIG = {
     "display": {"theme": "dark", "brightness": 80},
     "platform": {"url": "https://platform.gridfront.io", "api_key": "", "tenant_id": ""},
     "detection_config": {},
+    # Per-model class enable/disable lists. Schema:
+    #   {model_id: [disabled_class_name, ...]}
+    # Anything not in the list is treated as enabled. Persisted server-side
+    # so per-class toggles survive page reloads and other clients (tablets).
+    "class_filters": {},
+    # Visual zone editor: shapes drawn around the machine on a top-down
+    # ground plane. Coordinates are in metres with machine origin at (0,0).
+    # ``sync`` works like a dual-AC car: when True, every camera shares the
+    # ``all`` outline; when False, each camera reads its own block under
+    # ``by_camera``. Shape format:
+    #   {"type": "rect|circle|oval|polygon", "points": [[x,z],...], "params": {...}}
+    "zone_shapes": {
+        "sync": True,
+        "all": {"danger": [], "warning": []},
+        "by_camera": {},
+    },
 }
 
 
@@ -121,12 +139,12 @@ def resolve_installed_cameras(config):
 
 @app.route("/")
 def index():
-    # Single-page app: detect.html is the only view. Settings live in a
-    # popup on this same page (see toggleSettings in detect.html). The old
+    # Single-page app: scout.html is the only view. Settings live in a
+    # popup on this same page (see toggleSettings in scout.html). The old
     # /dashboard, /cameras, /alerts, /settings, /radar, /machines templates
     # were removed — everything they did is now either a popup section or
-    # an API endpoint consumed directly by detect.html.
-    return render_template("detect.html")
+    # an API endpoint consumed directly by scout.html.
+    return render_template("scout.html")
 
 
 # ── Spatial API ──────────────────────────────────────────────
@@ -143,11 +161,67 @@ def get_coverage():
     Sectors describe the FOV wedge each installed camera contributes to
     the machine-world view, so the spatial view and cab display can render
     accurately which arcs around the machine are actually monitored.
+
+    We compute live from ``config.installed_cameras`` rather than reading
+    the pipeline_runner snapshot so position/yaw edits made via the zone
+    editor are visible immediately — without waiting for a pipeline
+    restart. The pipeline cache is only used as a fallback in case the
+    config import fails.
     """
-    sectors = get_coverage_sectors()
-    if not sectors and _pipeline_runner is not None:
-        sectors = _pipeline_runner.coverage_sectors
+    try:
+        from pipeline.pipeline_runner import _compute_coverage_sectors
+        config = load_config()
+        installed = resolve_installed_cameras(config)
+        sectors = _compute_coverage_sectors(installed)
+    except Exception:
+        sectors = get_coverage_sectors()
+        if not sectors and _pipeline_runner is not None:
+            sectors = _pipeline_runner.coverage_sectors
     return jsonify({"sectors": sectors, "count": len(sectors)})
+
+
+@app.route("/api/register-display", methods=["POST"])
+def register_display():
+    """ESP32 cab displays POST here to announce themselves and heartbeat.
+
+    Body: {"ip": "192.168.x.y", "port": 5556}
+
+    The broadcaster then fan-outs detection state to every registered IP at
+    ~15Hz. Registrations TTL out if the ESP stops heartbeating.
+    """
+    body = request.json or {}
+    ip = body.get("ip")
+    port = int(body.get("port", 5556))
+    if not ip:
+        return jsonify({"error": "missing ip"}), 400
+    display_broadcaster.register(ip, port)
+    return jsonify({
+        "status": "ok",
+        "displays": display_broadcaster.list_displays(),
+        "units": display_broadcaster.get_units(),
+    })
+
+
+@app.route("/api/displays", methods=["GET"])
+def list_displays():
+    return jsonify({"displays": display_broadcaster.list_displays()})
+
+
+@app.route("/api/units", methods=["GET", "POST"])
+def units_pref():
+    """Single source of truth for the operator-facing unit (m | ft).
+
+    Webview posts here whenever the operator flips the m/ft toggle so
+    that every cab display sees the change on the next broadcast tick.
+    """
+    if request.method == "POST":
+        body = request.json or {}
+        try:
+            u = display_broadcaster.set_units(body.get("units", ""))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"status": "ok", "units": u})
+    return jsonify({"units": display_broadcaster.get_units()})
 
 
 @app.route("/api/spatial/stream")
@@ -172,6 +246,34 @@ def get_config():
     return jsonify(load_config())
 
 
+@app.route("/api/zones", methods=["GET"])
+def get_zones():
+    """Return the visual zone editor's saved shapes."""
+    config = load_config()
+    return jsonify(config.get("zone_shapes", DEFAULT_CONFIG["zone_shapes"]))
+
+
+@app.route("/api/zones", methods=["POST"])
+def save_zones():
+    """Replace the entire zone_shapes block.
+
+    The editor sends the complete state on every save (sync flag, the
+    ``all`` block, and any per-camera blocks). We don't try to merge —
+    the editor is the single source of truth for shapes.
+    """
+    body = request.json or {}
+    if not isinstance(body, dict):
+        return jsonify({"error": "expected object"}), 400
+    config = load_config()
+    config["zone_shapes"] = {
+        "sync": bool(body.get("sync", True)),
+        "all": body.get("all") or {"danger": [], "warning": []},
+        "by_camera": body.get("by_camera") or {},
+    }
+    save_config(config)
+    return jsonify({"status": "ok", "zone_shapes": config["zone_shapes"]})
+
+
 @app.route("/api/config", methods=["POST"])
 def update_config():
     config = load_config()
@@ -185,38 +287,174 @@ def update_config():
 
 @app.route("/api/cameras", methods=["GET"])
 def get_cameras():
+    """Return the installed_cameras list (the source of truth)."""
     config = load_config()
-    return jsonify(config.get("cameras", []))
+    return jsonify(resolve_installed_cameras(config))
+
+
+@app.route("/api/cameras/scan", methods=["GET"])
+def scan_cameras():
+    """Plug-and-play camera scan.
+
+    Returns three lists for the cameras tab UI:
+      installed: cameras already in installed_cameras (with online flag)
+      detected:  OAK-Ds visible on the LAN that are NOT yet installed
+      scan_meta: { last_scan_at, scan_interval_s }
+    """
+    config = load_config()
+    installed = resolve_installed_cameras(config)
+    snap = camera_scanner.snapshot()
+
+    # When the live pipeline owns a device, depthai's exclusive lock means
+    # the scanner thread CAN'T see it via discovery — so we have to merge
+    # in driver state too. Otherwise an actively-streaming camera shows
+    # as "offline" in the cameras tab, which is the opposite of useful.
+    pipeline_connected_ids = set()
+    if _pipeline_runner is not None:
+        for cam_id, driver in _pipeline_runner._drivers.items():
+            if getattr(driver, "_connected", False):
+                pipeline_connected_ids.add(cam_id)
+
+    # Mark each installed camera with a live online flag from the scanner
+    # OR the pipeline runner.
+    installed_ids = set()
+    for cam in installed:
+        dev_id = cam.get("device_id")
+        cam["online"] = (
+            camera_scanner.is_online(dev_id)
+            or cam.get("id") in pipeline_connected_ids
+        )
+        if dev_id:
+            installed_ids.add(dev_id)
+
+    # Detected-but-not-installed: anything in the scanner cache whose
+    # mx_id and IP/name aren't already claimed by an installed camera.
+    detected = []
+    for d in snap["devices"]:
+        if not d.get("online"):
+            continue
+        if d.get("mx_id") in installed_ids or d.get("name") in installed_ids:
+            continue
+        detected.append(d)
+
+    return jsonify({
+        "installed": installed,
+        "detected": detected,
+        "scan_meta": {
+            "last_scan_at": snap["last_scan_at"],
+            "scan_interval_s": snap["scan_interval_s"],
+        },
+    })
 
 
 @app.route("/api/cameras", methods=["POST"])
 def add_camera():
+    """Install a newly-detected OAK-D into installed_cameras.
+
+    Body: {"device_id": "<ip or mx_id>", "label"?: "Front camera"}
+
+    The new entry is seeded from the active machine profile's first
+    available camera mount slot, so the operator gets a working camera at
+    a sensible (if approximate) position immediately. They can refine
+    position/rotation later via the spatial zone editor.
+    """
+    data = request.json or {}
+    device_id = data.get("device_id")
+    if not device_id:
+        return jsonify({"error": "device_id required"}), 400
+
     config = load_config()
-    camera = request.json
-    # Assign an ID
-    camera["id"] = f"cam-{len(config['cameras'])}"
-    if "status" not in camera:
-        camera["status"] = "disconnected"
-    config["cameras"].append(camera)
+    installed = resolve_installed_cameras(config)
+    if any(c.get("device_id") == device_id for c in installed):
+        return jsonify({"error": "device already installed"}), 409
+
+    # Find an unused mount slot from the active machine profile, or fall
+    # back to a generic position if none are available.
+    machine_type = config.get("machine_type", "wheel_loader")
+    profile = get_machine_profile(machine_type) or {}
+    used_mounts = {c.get("mount_id") for c in installed if c.get("mount_id")}
+    mounts = profile.get("camera_mounts", []) or []
+    next_mount = next((m for m in mounts if m["id"] not in used_mounts), None)
+
+    spec = profile.get("camera_spec", {})
+    hfov = spec.get("hfov_deg", 127)
+    max_range = profile.get("default_zones", {}).get("max_range_m", 12.0)
+
+    if next_mount is not None:
+        rot = next_mount.get("rotation", [0, 0, 0])
+        new_cam = {
+            "id": f"cam-{next_mount['id']}",
+            "label": data.get("label") or next_mount.get("label", next_mount["id"]),
+            "device_id": device_id,
+            "mount_id": next_mount["id"],
+            "position_m": list(next_mount.get("position", [0, 0, 0])),
+            "pitch_deg": rot[0] if len(rot) > 0 else 0,
+            "yaw_deg":   rot[1] if len(rot) > 1 else 0,
+            "roll_deg":  rot[2] if len(rot) > 2 else 0,
+            "hfov_deg": hfov,
+            "max_range_m": max_range,
+            "ir_mode": "auto",
+        }
+    else:
+        # No free mount slot — drop in at origin and let the operator move it
+        new_cam = {
+            "id": f"cam-{len(installed) + 1}",
+            "label": data.get("label") or f"Camera {len(installed) + 1}",
+            "device_id": device_id,
+            "position_m": [0, 0, 2.0],
+            "pitch_deg": 0, "yaw_deg": 0, "roll_deg": 0,
+            "hfov_deg": hfov,
+            "max_range_m": max_range,
+            "ir_mode": "auto",
+        }
+
+    installed.append(new_cam)
+    config["installed_cameras"] = installed
     save_config(config)
-    return jsonify({"status": "ok", "camera": camera})
+    return jsonify({"status": "ok", "camera": new_cam})
 
 
 @app.route("/api/cameras/<camera_id>", methods=["PATCH"])
 def update_camera(camera_id):
+    """Patch fields on an installed camera (label, ir_mode, position, etc).
+
+    Pose-related edits (``position_m``, ``yaw_deg``, ``pitch_deg``,
+    ``roll_deg``) are also pushed into the live pipeline runner so the
+    SpatialFusion transform is rebuilt for that camera. Detections seen
+    on the very next frame project through the new pose — i.e., moving a
+    camera to the right side of the machine in the editor immediately
+    causes that camera's people to appear on the right of the 3D scene
+    and cab display, with no pipeline restart needed.
+    """
     config = load_config()
-    for cam in config["cameras"]:
+    installed = resolve_installed_cameras(config)
+    body = request.json or {}
+    for cam in installed:
         if cam["id"] == camera_id:
-            cam.update(request.json)
+            cam.update(body)
+            config["installed_cameras"] = installed
             save_config(config)
+            # Hot-patch the live pipeline so detections rebase immediately.
+            pose_keys = {"position_m", "yaw_deg", "pitch_deg", "roll_deg"}
+            if _pipeline_runner is not None and pose_keys & body.keys():
+                try:
+                    _pipeline_runner.update_camera_pose(camera_id, body)
+                except Exception:
+                    logger.exception("Live pose update failed for %s", camera_id)
             return jsonify({"status": "ok", "camera": cam})
     return jsonify({"error": "Camera not found"}), 404
 
 
 @app.route("/api/cameras/<camera_id>", methods=["DELETE"])
 def delete_camera(camera_id):
+    """Remove a camera from installed_cameras."""
     config = load_config()
-    config["cameras"] = [c for c in config["cameras"] if c["id"] != camera_id]
+    installed = resolve_installed_cameras(config)
+    before = len(installed)
+    installed = [c for c in installed if c["id"] != camera_id]
+    if len(installed) == before:
+        return jsonify({"error": "Camera not found"}), 404
+    config["installed_cameras"] = installed
     save_config(config)
     return jsonify({"status": "ok"})
 
@@ -368,6 +606,40 @@ def update_detection_config():
     config["detection_config"].update(updates)
     save_config(config)
     return jsonify({"status": "ok", "detection_config": config["detection_config"]})
+
+
+@app.route("/api/detection/class_filters", methods=["GET"])
+def get_class_filters():
+    """Return per-model disabled-class lists.
+
+    Schema: {model_id: [disabled_class_name, ...]}. Anything not in the list
+    is enabled. The frontend uses this to populate the per-class toggles in
+    the Detection settings tab so they persist across reloads/devices.
+    """
+    config = load_config()
+    return jsonify(config.get("class_filters", {}))
+
+
+@app.route("/api/detection/class_filters", methods=["POST"])
+def set_class_filters():
+    """Replace the disabled-class list for a single model.
+
+    Body: {"model_id": "...", "disabled": ["class1", "class2"]}
+    Only the named model's entry is updated; other models are left alone.
+    """
+    data = request.json or {}
+    model_id = data.get("model_id")
+    disabled = data.get("disabled", [])
+    if not model_id or model_id not in MODELS:
+        return jsonify({"error": f"Unknown model: {model_id}"}), 400
+    if not isinstance(disabled, list) or not all(isinstance(c, str) for c in disabled):
+        return jsonify({"error": "disabled must be a list of strings"}), 400
+    config = load_config()
+    filters = config.get("class_filters", {}) or {}
+    filters[model_id] = disabled
+    config["class_filters"] = filters
+    save_config(config)
+    return jsonify({"status": "ok", "model_id": model_id, "disabled": disabled})
 
 
 # ── Model API ───────────────────────────────────────────────
@@ -622,8 +894,23 @@ def camera_status_overview():
 
 @app.route("/api/camera/snapshot")
 def camera_snapshot():
-    """Return pre-encoded JPEG of the latest camera frame — near-zero server time."""
+    """Return pre-encoded JPEG of the latest camera frame — near-zero server time.
+
+    Optional ``?cam_id=`` query param targets a specific installed camera
+    (used by the visual zone editor preview pane). When omitted, returns
+    the first available real camera, falling back to any driver.
+    """
+    requested = request.args.get("cam_id")
     if _pipeline_runner is not None:
+        # Specific camera requested → only that one.
+        if requested:
+            driver = _pipeline_runner._drivers.get(requested)
+            if driver is not None:
+                jpeg = driver.get_jpeg()
+                if jpeg:
+                    return Response(jpeg, mimetype='image/jpeg',
+                                    headers={"Cache-Control": "no-store"})
+            return Response(b'', status=204)
         # Prefer real camera
         for cam_id, driver in _pipeline_runner._drivers.items():
             if not driver.mock:
@@ -901,7 +1188,7 @@ if __name__ == "__main__":
     config = load_config()
     machine_type = args.machine or config.get("machine_type", "wheel_loader")
 
-    print(f"[GridFront Detect] Starting — machine: {machine_type}")
+    print(f"[GridFront Scout] Starting — machine: {machine_type}")
 
     # Resolve the physically-installed cameras. installed_cameras in
     # config.json is the source of truth; fall back to synthesising from
@@ -916,6 +1203,11 @@ if __name__ == "__main__":
         print(f"  Found {len(devices)} OAK-D camera(s) via broadcast:")
         for d in devices:
             print(f"    {d['name']} ({d['mx_id']}) — {d['state']}")
+
+    # Background camera scanner — feeds GET /api/cameras/scan so the
+    # cameras tab can show plug-and-play status without each client
+    # broadcasting on its own.
+    camera_scanner.start()
 
     if installed_cameras:
         print(f"  Installed cameras ({len(installed_cameras)}):")
@@ -940,15 +1232,19 @@ if __name__ == "__main__":
     )
     _pipeline_runner.start()
 
+    # Start UDP broadcaster for ESP32 cab displays.
+    display_broadcaster.start()
+
     # Ensure clean shutdown releases OAK-D XLink on exit
     import signal
     import atexit
 
     def _shutdown(*args):
-        print("\n[GridFront Detect] Shutting down — releasing camera...")
+        print("\n[GridFront Scout] Shutting down — releasing camera...")
         if _pipeline_runner is not None:
             _pipeline_runner.stop()
-        print("[GridFront Detect] Camera released. Goodbye.")
+        display_broadcaster.stop()
+        print("[GridFront Scout] Camera released. Goodbye.")
         raise SystemExit(0)
 
     atexit.register(lambda: _pipeline_runner.stop() if _pipeline_runner else None)

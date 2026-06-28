@@ -1,0 +1,114 @@
+# Auto-sync Platform's /scout demo when the kiosk UI changes.
+#
+# The /scout page on platform.gridfront.io is a faithful in-browser replica
+# of this kiosk and must stay byte-for-byte identical to the source HTML +
+# boot animation + static assets shipped from this repo. This workflow
+# closes the loop: any time master gets a change to the WebView assets, we
+# automatically open (or update) a sync PR on the Platform repo with the
+# fresh bundle so Tyler / Jeremy / James can merge it without remembering
+# to run `bash scripts/sync-scout.sh` manually.
+#
+# Requires the repo secret PLATFORM_REPO_TOKEN — a PAT with `contents: write`
+# and `pull-requests: write` scope on GridFront-Inc/Platform.
+
+name: Sync Platform scout demo
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'android/app/src/main/assets/www/index.html'
+      - 'bootanimation/**'
+      - 'static/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check for Platform token
+        id: token_check
+        run: |
+          if [ -n "${{ secrets.PLATFORM_REPO_TOKEN }}" ]; then
+            echo "have_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_token=false" >> "$GITHUB_OUTPUT"
+            echo "::error::PLATFORM_REPO_TOKEN secret is not set. Cannot open a sync PR on GridFront-Inc/Platform without it."
+            exit 1
+          fi
+
+      - name: Checkout Detect (current repo)
+        uses: actions/checkout@v4
+        with:
+          path: detect
+
+      - name: Checkout Platform
+        uses: actions/checkout@v4
+        with:
+          repository: GridFront-Inc/Platform
+          token: ${{ secrets.PLATFORM_REPO_TOKEN }}
+          path: platform
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install FFmpeg (for boot.mp4 rebuild)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Run sync-scout.sh
+        working-directory: platform
+        env:
+          DETECT_REPO: ${{ github.workspace }}/detect
+        run: bash scripts/sync-scout.sh
+
+      - name: Detect changes
+        id: changes
+        working-directory: platform
+        run: |
+          if git diff --quiet -- src/lib/scout-demo public/scout-demo-static; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No changes — Platform is already in lockstep with this commit."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- src/lib/scout-demo public/scout-demo-static
+          fi
+
+      - name: Open / update sync PR on Platform
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          path: platform
+          token: ${{ secrets.PLATFORM_REPO_TOKEN }}
+          commit-message: |
+            chore(scout): sync kiosk assets from detect.gridfront.io@${{ github.sha }}
+
+            Auto-sync triggered by an upstream change to the kiosk WebView,
+            bootanimation, or static assets. See the Detect commit for the
+            user-facing change being mirrored into the /scout demo.
+          branch: auto-sync/scout-${{ github.sha }}
+          delete-branch: true
+          title: "chore(scout): sync kiosk assets from detect.gridfront.io"
+          body: |
+            Auto-sync of the bundled Scout kiosk assets to match the latest
+            change on **detect.gridfront.io@${{ github.sha }}**.
+
+            Files changed by `scripts/sync-scout.sh`:
+            - `src/lib/scout-demo/index.html`
+            - `public/scout-demo-static/*` (boot.mp4 + static assets)
+
+            **Source commit on Detect:** ${{ github.event.head_commit.message }}
+
+            Merge this to keep `/scout` byte-for-byte identical to the real
+            on-machine kiosk. The `Scout lockstep` workflow on this PR will
+            also re-verify drift = 0 and API parity before merge.
+          labels: |
+            scout-sync
+            automation

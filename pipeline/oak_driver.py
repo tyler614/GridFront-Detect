@@ -604,6 +604,7 @@ class OakDriver:
                 try:
                     if model_def.source == "local" and model_def.blob_path:
                         import os
+                        from pipeline.nn_archive_builder import ensure_archive
                         blob_abs = os.path.join(
                             os.path.dirname(os.path.dirname(__file__)),
                             model_def.blob_path,
@@ -614,10 +615,14 @@ class OakDriver:
                                 f"{blob_abs}. Drop the compiled .blob file there "
                                 "and restart, or pick a different model."
                             )
-                        nn.build(cam_rgb, stereo, blob_abs, fps=cfg.fps)
+                        # DepthAI v3 dropped raw .blob loading on
+                        # SpatialDetectionNetwork — wrap the blob in an NNArchive.
+                        archive_path = ensure_archive(blob_abs)
+                        archive = dai.NNArchive(archive_path)
+                        nn.build(cam_rgb, stereo, archive, fps=cfg.fps)
                         logger.info(
                             "SpatialDetectionNetwork loaded (local): %s (%s)",
-                            model_def.name, blob_abs,
+                            model_def.name, archive_path,
                         )
                     else:
                         nn.build(cam_rgb, stereo, model_def.slug, fps=cfg.fps)

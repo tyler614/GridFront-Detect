@@ -899,6 +899,57 @@ class PipelineRunner:
             "stability": stability,
         }
 
+    def update_camera_pose(self, camera_id: str, fields: dict) -> bool:
+        """Apply a live pose edit to a camera without restarting the pipeline.
+
+        Called from the PATCH /api/cameras/<id> handler whenever the
+        operator drags a camera in the visual zone editor (or types into
+        the inspector). Updates the in-memory ``installed_cameras`` entry,
+        rebuilds the SpatialFusion transform so subsequent detections are
+        projected through the new pose, and republishes coverage sectors
+        so the spatial view's FOV cone follows along.
+
+        Returns True if the camera was found, False otherwise.
+        """
+        with self._calib_lock:
+            cam = next(
+                (c for c in self._installed_cameras if c["id"] == camera_id),
+                None,
+            )
+            if cam is None:
+                return False
+            # Only the pose-relevant keys matter here. Everything else
+            # (label, ir_mode, etc.) is already persisted by app.py.
+            for k in ("position_m", "yaw_deg", "pitch_deg", "roll_deg"):
+                if k in fields:
+                    cam[k] = fields[k]
+            # Rebuild the fusion transform for this camera so the next
+            # frame's detections are projected through the new pose.
+            try:
+                self._fusion.update_transform(
+                    camera_id,
+                    cam.get("position_m", [0, 0, 0]),
+                    [
+                        cam.get("pitch_deg", 0),
+                        cam.get("yaw_deg", 0),
+                        cam.get("roll_deg", 0),
+                    ],
+                )
+            except Exception:
+                logger.exception("Failed to update fusion transform for %s", camera_id)
+            # Republish coverage so the spatial view's FOV cone snaps to
+            # the new pose immediately.
+            self._coverage_sectors = _compute_coverage_sectors(self._installed_cameras)
+            try:
+                self._set_coverage_sectors(self._coverage_sectors)
+            except Exception:
+                logger.exception("Failed to republish coverage after pose update")
+        logger.info(
+            "Camera %s pose updated → pos=%s yaw=%s°",
+            camera_id, cam.get("position_m"), cam.get("yaw_deg"),
+        )
+        return True
+
     def get_calibration_status(self, camera_id: str) -> dict:
         """Return live status for the Settings UI countdown / health dot.
 

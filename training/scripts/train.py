@@ -1,4 +1,4 @@
-"""Train YOLOv11n on the merged GridFront Detect dataset.
+"""Train YOLOv11n on the merged GridFront Scout dataset.
 
 Usage:
     python training/scripts/train.py
@@ -21,7 +21,7 @@ def main():
         save=True,
         save_period=10,     # Checkpoint every 10 epochs
         project="training/runs",
-        name="gridfront-detect-v1",
+        name="gridfront-scout-v1",
         exist_ok=True,
         # Augmentation
         hsv_h=0.015,
@@ -37,7 +37,7 @@ def main():
     )
 
     print(f"\nTraining complete!")
-    print(f"Best model: training/runs/gridfront-detect-v1/weights/best.pt")
+    print(f"Best model: training/runs/gridfront-scout-v1/weights/best.pt")
 
 
 if __name__ == "__main__":

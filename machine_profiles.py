@@ -1,5 +1,5 @@
 """
-GridFront Detect — Machine Profile Definitions
+GridFront Scout — Machine Profile Definitions
 Real-world dimensions and camera mount positions for supported equipment types.
 """
 

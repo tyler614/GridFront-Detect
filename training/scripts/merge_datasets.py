@@ -1,6 +1,6 @@
 """Merge all downloaded datasets into a single YOLO training folder.
 
-Remaps all labels to the GridFront Detect canonical taxonomy and creates
+Remaps all labels to the GridFront Scout canonical taxonomy and creates
 a unified train/valid/test split ready for YOLOv11 training.
 
 Usage:
@@ -14,7 +14,7 @@ from pathlib import Path
 from collections import defaultdict
 
 # ---------------------------------------------------------------------------
-# GridFront Detect canonical classes (must match import_datasets.py)
+# GridFront Scout canonical classes (must match import_datasets.py)
 # ---------------------------------------------------------------------------
 CANONICAL_CLASSES = [
     "person",        # 0

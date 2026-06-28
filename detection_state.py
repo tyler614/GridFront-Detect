@@ -1,5 +1,5 @@
 """
-GridFront Detect — Shared Detection State
+GridFront Scout — Shared Detection State
 Thread-safe state management for detections and camera health.
 """
 
@@ -9,11 +9,50 @@ import time
 # ── Detection state ──────────────────────────────────────────
 _state = {
     "detections": [],
-    "summary": {"danger_count": 0, "warning_count": 0, "clear_count": 0, "closest_m": None, "cameras_active": 0},
+    "schema_version": 1,
+    "scene_state_code": 0,
+    "scene_state": "none",
+    "summary": {
+        "detection_count": 0,
+        "outside_count": 0,
+        "yellow_count": 0,
+        "red_count": 0,
+        "highest_zone_code": 0,
+        "closest_m": None,
+        "cameras_active": 0,
+    },
     "timestamp": None,
     "fps": 0,
 }
 _lock = threading.Lock()
+
+ZONE_NONE = 0
+ZONE_OUTSIDE = 1
+ZONE_YELLOW = 2
+ZONE_RED = 3
+
+
+def _zone_code(det: dict) -> int:
+    raw_code = det.get("zone_code")
+    if isinstance(raw_code, (int, float)):
+        return max(ZONE_OUTSIDE, min(ZONE_RED, int(raw_code)))
+    zone = str(det.get("zone") or "").lower()
+    if zone in ("danger", "red"):
+        return ZONE_RED
+    if zone in ("warning", "yellow"):
+        return ZONE_YELLOW
+    return ZONE_OUTSIDE
+
+
+def _zone_name(code: int) -> str:
+    if code == ZONE_RED:
+        return "red"
+    if code == ZONE_YELLOW:
+        return "yellow"
+    if code == ZONE_NONE:
+        return "none"
+    return "outside"
+
 
 # ── Coverage sectors (static per pipeline run — updated on start/restart) ──
 # List of {id, label, position_m:[x,y,z], yaw_deg, hfov_deg, range_m,
@@ -49,15 +88,39 @@ def update_state(detections, fps=0):
     global _state
     with _lock:
         det_dicts = [d.to_dict() if hasattr(d, "to_dict") else d for d in detections]
-        danger = [d for d in det_dicts if d.get("zone") == "DANGER"]
-        warning = [d for d in det_dicts if d.get("zone") == "WARNING"]
+        red_count = 0
+        yellow_count = 0
+        outside_count = 0
+        for d in det_dicts:
+            code = _zone_code(d)
+            d["zone_code"] = code
+            d["zone"] = _zone_name(code)
+            if code == ZONE_RED:
+                red_count += 1
+            elif code == ZONE_YELLOW:
+                yellow_count += 1
+            else:
+                outside_count += 1
+        if not det_dicts:
+            scene_state_code = ZONE_NONE
+        elif red_count:
+            scene_state_code = ZONE_RED
+        elif yellow_count:
+            scene_state_code = ZONE_YELLOW
+        else:
+            scene_state_code = ZONE_OUTSIDE
         distances = [d.get("distance_m", 999) for d in det_dicts]
         _state = {
+            "schema_version": 1,
+            "scene_state_code": scene_state_code,
+            "scene_state": _zone_name(scene_state_code),
             "detections": det_dicts,
             "summary": {
-                "danger_count": len(danger),
-                "warning_count": len(warning),
-                "clear_count": len(det_dicts) - len(danger) - len(warning),
+                "detection_count": len(det_dicts),
+                "outside_count": outside_count,
+                "yellow_count": yellow_count,
+                "red_count": red_count,
+                "highest_zone_code": scene_state_code,
                 "closest_m": min(distances) if distances else None,
                 "cameras_active": len(set(d.get("camera_id", "") for d in det_dicts)),
             },

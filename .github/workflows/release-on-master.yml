@@ -1,0 +1,95 @@
+name: Release on master
+
+on:
+  push:
+    branches: [master, main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]') && !startsWith(github.event.head_commit.message, 'chore: release v')"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Check version sync
+        run: node scripts/check-version-sync.js
+
+      - name: Get last tag
+        id: tag
+        run: |
+          git fetch --tags 2>/dev/null || true
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "last_tag=${LAST_TAG}" >> $GITHUB_OUTPUT
+          if [ -z "$LAST_TAG" ]; then
+            echo "has_tag=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_tag=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create baseline tag
+        if: steps.tag.outputs.has_tag == 'false'
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+
+      - name: Get commits since last tag
+        if: steps.tag.outputs.has_tag == 'true'
+        id: commits
+        run: |
+          COMMITS=$(git log ${{ steps.tag.outputs.last_tag }}..HEAD --format="%s%n%b")
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          if [ -z "$COMMITS" ]; then
+            echo "has_new=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_new=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine bump type
+        if: steps.tag.outputs.has_tag == 'true' && steps.commits.outputs.has_new == 'true'
+        id: bump
+        env:
+          COMMITS: ${{ steps.commits.outputs.commits }}
+        run: |
+          echo "$COMMITS" > /tmp/commits.txt
+          if grep -qE "BREAKING CHANGE|^[a-z]+(\([^)]+\))?!:" /tmp/commits.txt; then
+            echo "bump=major" >> $GITHUB_OUTPUT
+          elif grep -qE "^(feat|feat\([^)]+\)):" /tmp/commits.txt; then
+            echo "bump=minor" >> $GITHUB_OUTPUT
+          else
+            echo "bump=patch" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Bump version
+        if: steps.tag.outputs.has_tag == 'true' && steps.commits.outputs.has_new == 'true'
+        env:
+          RELEASE_COMMITS: ${{ steps.commits.outputs.commits }}
+        run: node scripts/bump-version.js ${{ steps.bump.outputs.bump }}
+
+      - name: Create release commit and tag
+        if: steps.tag.outputs.has_tag == 'true' && steps.commits.outputs.has_new == 'true'
+        run: |
+          NEW_VERSION=$(node -p "require('./package.json').version")
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json android/app/build.gradle.kts release-notes.json
+          git diff --staged --quiet && exit 0
+          git commit -m "chore: release v${NEW_VERSION} [skip ci]"
+          git push origin HEAD:${GITHUB_REF_NAME}
+          git tag "v${NEW_VERSION}"
+          git push origin "v${NEW_VERSION}"
