@@ -40,8 +40,11 @@ from pipeline.standalone.script_runtime import SCRIPT_SOURCE
 logger = logging.getLogger(__name__)
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_BLOB = REPO / "models" / "gridfront-scout-v1.blob"
-DEFAULT_MODEL_JSON = REPO / "models" / "gridfront-scout-v1.json"
+# Default = zoo YOLOv6n COCO until Radius v1 lands (the old
+# gridfront-scout-v1 weights were removed 2026-07-05: AGPL + NC-dataset
+# encumbered — see pipeline/model_registry.py and training/radius/README.md).
+DEFAULT_BLOB = REPO / "models" / "yolov6nr1-coco.blob"
+DEFAULT_MODEL_JSON = REPO / "models" / "yolov6nr1-coco.json"
 DEFAULT_CONFIG = REPO / "config.json"
 # Agent-synced firmware intent (E3 reflash lane). The cloud's desired
 # perception (model_id/confidence) is a REFLASH-LANE concern — confidence +
@@ -425,11 +428,12 @@ def build_pipeline(*, blob_path: Path, model_meta: dict,
     stereo.setDefaultProfilePreset(dai.node.StereoDepth.PresetMode.HIGH_ACCURACY)
     stereo.initialConfig.setMedianFilter(dai.MedianFilter.KERNEL_7x7)
     stereo.setLeftRightCheck(True)
-    # Standard config (user doesn't need sub-37cm near-field). Subpixel gives
-    # ~754 depth levels for steadier far-field distance; it's mutually exclusive
-    # with ExtendedDisparity, so extended OFF. MinZ ~37cm @ 800P — fine here.
+    # Subpixel OFF (was ON): measured ~9 FPS cost on comparable spatial
+    # pipelines (luxonis/depthai#947), and red/yellow zone banding at 3.5-6m
+    # needs ~0.1m precision, not subpixel mm. Extended disparity stays OFF
+    # (no sub-37cm near-field requirement).
     stereo.setExtendedDisparity(False)
-    stereo.setSubpixel(True)
+    stereo.setSubpixel(False)
     stereo.setDepthAlign(dai.CameraBoardSocket.RGB)
     mono_l.out.link(stereo.left)
     mono_r.out.link(stereo.right)
@@ -494,14 +498,18 @@ def build_pipeline(*, blob_path: Path, model_meta: dict,
     nn.passthrough.link(manip.inputImage)
 
     tracker = p.createObjectTracker()
-    tracker.setTrackerType(dai.TrackerType.ZERO_TERM_COLOR_HISTOGRAM)
+    # SHORT_TERM_IMAGELESS (was ZERO_TERM_COLOR_HISTOGRAM): the color-
+    # histogram matcher is the expensive part of the tracker (~costs as much
+    # as the whole spatial calc, luxonis/depthai#947) and per-frame NN +
+    # bbox IoU is enough for zone alarms. Short-term also extrapolates
+    # through the occasional missed detection instead of dropping the track.
+    tracker.setTrackerType(dai.TrackerType.SHORT_TERM_IMAGELESS)
     tracker.setTrackerIdAssignmentPolicy(dai.TrackerIdAssignmentPolicy.SMALLEST_ID)
     tracker.setMaxObjectsToTrack(20)
-    # A track must persist ~4 frames before it's reported as a real instance.
-    # Kills one-frame ghost births (a spurious NN box that never re-confirms)
-    # that would otherwise inflate the person count. Verified present on
-    # dai.node.ObjectTracker in depthai 2.32.
-    tracker.setTrackletBirthThreshold(4)
+    # Birth threshold 2 (was 4): still kills one-frame ghost births, but a
+    # real person reaches the display 2 frames (~130-200ms) sooner — at the
+    # old value an alarm waited ~270-400ms before it could exist.
+    tracker.setTrackletBirthThreshold(2)
     safety = _safety_indices(labels, allow_classes)
     if safety:
         tracker.setDetectionLabelsToTrack(safety)

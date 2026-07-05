@@ -65,8 +65,10 @@ PPE_LABELS = [
     "Person", "Safety Cone", "Safety Vest", "machinery", "vehicle",
 ]
 
-# ── GridFront Scout V1 labels (custom-trained) ─────────────────────────
-GRIDFRONT_V1_LABELS = [
+# ── GridFront Radius labels (the in-house model taxonomy) ───────────────
+# Radius is GridFront's detection model line for Scout. v1 ships from the
+# license-clean training rebuild (see training/radius/README.md).
+RADIUS_LABELS = [
     "person", "excavator", "wheel-loader", "dozer", "crane",
     "dump-truck", "grader", "compactor", "cone",
 ]
@@ -90,21 +92,30 @@ _register(ModelDef(
     description="Fastest general model. 80 COCO classes, ~64 FPS on Myriad X.",
 ))
 
-# -- GridFront Scout V1 (custom, in-house construction equipment) --
-_register(ModelDef(
-    id="gridfront-scout-v1",
-    name="GridFront Scout V1",
-    slug="",  # local blob, slug unused
-    classes=GRIDFRONT_V1_LABELS,
-    input_size=(512, 288),
-    description="In-house YOLOv8n trained on construction equipment. 9 classes.",
-    source="local",
-    blob_path="models/gridfront-scout-v1.blob",
-))
+# -- GridFront Radius v1 (in-house, license-clean rebuild) --
+# REMOVED 2026-07-05: the old "gridfront-scout-v1" model (Ultralytics
+# YOLO11n) was deleted — Ultralytics claims AGPL-3.0 over trained weights,
+# and its training merge included non-commercial datasets (ACID CC BY-NC,
+# CrowdHuman, thermal sets). Not shippable in a commercial product.
+# Radius v1 replaces it: YOLOv6-N @ 640x384 trained per
+# training/radius/README.md. Register it here once trained:
+#
+# _register(ModelDef(
+#     id="radius-v1",
+#     name="GridFront Radius v1",
+#     slug="",  # local blob, slug unused
+#     classes=RADIUS_LABELS,
+#     input_size=(640, 384),
+#     description="Radius v1 — YOLOv6-N, license-clean construction taxonomy.",
+#     source="local",
+#     blob_path="models/radius-v1.blob",
+# ))
 
 
 # ── Default model ───────────────────────────────────────────────────────
-DEFAULT_MODEL_ID = "gridfront-scout-v1"
+# yolov6n-coco until Radius v1 lands. (Zoo COCO weights: fine for dev/demo;
+# Radius v1 is the shippable artifact.)
+DEFAULT_MODEL_ID = "yolov6n-coco"
 
 
 def get_model(model_id: str) -> ModelDef | None:

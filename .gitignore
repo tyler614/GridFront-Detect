@@ -41,8 +41,6 @@ freecad_to_stl.py
 
 # Model blobs (too large for git)
 models/*.blob
-# Exception: GridFront in-house V1 blob is small (~6 MB), tracked in repo
-!models/gridfront-scout-v1.blob
 # NN archives are derived from .blob + .json at runtime by
 # pipeline.nn_archive_builder — never commit them.
 models/*.tar.xz

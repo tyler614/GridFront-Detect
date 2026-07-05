@@ -1,0 +1,15 @@
+# Radius training pipeline — install per-stage as needed
+# datasets.py
+requests
+tqdm
+pillow
+fiftyone            # Open Images person subset + dataset brain
+# complete_labels.py (GPU box)
+# autodistill
+# autodistill-grounded-sam-2
+# augment_fisheye.py
+opencv-python
+numpy
+# train_radius.py: see third_party/YOLOv6/requirements.txt (GPL — internal only)
+# export_blob.py
+# tools @ git+https://github.com/luxonis/tools
