@@ -46,7 +46,7 @@ def main(ckpt: Path, version: str, w: int, h: int, shaves: int) -> None:
     # headless. YOLOv6 R2+ heads are anchor-free decoded outputs; DepthAI
     # 2.x YoloSpatialDetectionNetwork parses them with anchors=[] metadata
     # (same as the zoo yolov6n blob). BENCH-VERIFY detections before flash.
-    y6 = HERE.parent / "third_party" / "YOLOv6"
+    y6 = HERE / "third_party" / "YOLOv6"
     onnx_path = out_dir / f"radius-{version}.onnx"
     cmd = [sys.executable, str(y6 / "deploy" / "ONNX" / "export_onnx.py"),
            "--weights", str(ckpt), "--img-size", str(h), str(w),
