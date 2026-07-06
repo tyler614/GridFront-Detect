@@ -76,7 +76,7 @@ def main(ckpt: Path, images: Path, out: Path, batch: int) -> None:
                 boxes = []
                 if d is not None and len(d):
                     for *xyxy, conf, cls in d.cpu().numpy():
-                        x1, y1, x2, y2 = xyxy
+                        x1, y1, x2, y2 = (float(v) for v in xyxy)
                         boxes.append([int(cls), round(float(conf), 4),
                                       round(x1 / W, 6), round(y1 / H, 6),
                                       round(x2 / W, 6), round(y2 / H, 6)])
