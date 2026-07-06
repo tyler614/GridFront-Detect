@@ -299,8 +299,12 @@ def cmd_remap(dedupe: bool = True) -> None:
     for s in SOURCES:
         totals[s.key] = _remap_source(s, dedupe)
         print(f"  {s.key}: {totals[s.key][0]} imgs, {totals[s.key][1]} boxes")
+    # ABSOLUTE paths: YOLOv6's dataloader resolves these against its own CWD
+    # (third_party/YOLOv6), so relative paths break at train time.
     (OUT / "data.yaml").write_text(
-        "train: train/images\nval: val/images\n"
+        f"train: {(OUT / 'train' / 'images').as_posix()}\n"
+        f"val: {(OUT / 'val' / 'images').as_posix()}\n"
+        "is_coco: False\n"
         f"nc: {len(RADIUS_CLASSES)}\nnames: {RADIUS_CLASSES}\n",
         encoding="utf-8")
     # Record which images still need pseudo-label completion per class
