@@ -36,7 +36,7 @@ https://claude.ai/code/artifact/be15870c-9c71-4491-9f84-c58b1b50b9a8
 ```powershell
 git clone -b feat/radius https://github.com/tyler614/GridFront-Scout scout
 cd scout\training\radius
-python -m venv .venv ; .venv\Scripts\activate     # Python 3.10–3.12
+python -m venv .venv ; .venv\Scripts\activate     # Python 3.11–3.12 (runner needs 3.11+)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install -r requirements.txt
 python -c "import torch; print(torch.cuda.get_device_name(0))"  # expect RTX 3060
@@ -44,6 +44,28 @@ python -c "import torch; print(torch.cuda.get_device_name(0))"  # expect RTX 306
 
 Disk: need ~100 GB free. Check with Tyler where to put `data/` if C: is tight
 (the scripts use `training/radius/data/` — a junction to another drive is fine).
+
+## Runner mode (v1 goes through this)
+
+Production training is TRIGGERED FROM THE PLATFORM, not by hand: a daemon on
+this PC polls platform.gridfront.io for queued jobs and drives the exact
+pipeline below as subprocesses, streaming progress/logs back and uploading
+the blob when done. After the Setup block above and the Step-1 manual
+downloads (still required — jobs assume `data/raw/` is populated):
+
+```powershell
+cd scout\training\radius\runner
+copy runner.toml.example runner.toml     # fill platform_url, token, runner_id
+.\install_runner.ps1                     # elevated PowerShell — registers + starts the daemon
+```
+
+Watch it: `Get-Content -Wait runner\logs\runner.log` (daemon) and
+`runner\logs\<job_id>.log` (per-job pipeline output). A crashed/rebooted
+runner resumes a claimed job past its completed stages via
+`runner\state\<job_id>.json`. Full operating manual: `runner/README.md`.
+
+The manual step-by-step below remains the fallback/debug path — and is how
+you should diagnose any stage the runner reports as failed.
 
 ## Step 1 — Downloads (~overnight; Tyler needed for logins)
 
