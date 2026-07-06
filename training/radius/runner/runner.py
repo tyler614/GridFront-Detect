@@ -359,6 +359,9 @@ class PlatformClient:
     def __init__(self, cfg: Config, transport=None):
         self.base = cfg.platform_url
         self._token = cfg.token
+        # Job-scoped routes identify the runner via the X-Runner-Id HEADER
+        # (platform contract; the body stays pure payload).
+        self._runner_id = cfg.runner_id
         self._transport = transport or self._urllib_transport
 
     @staticmethod
@@ -376,7 +379,8 @@ class PlatformClient:
 
     def _post_json(self, path: str, payload: dict, timeout: float = 30):
         headers = {"Authorization": f"Bearer {self._token}",
-                   "Content-Type": "application/json"}
+                   "Content-Type": "application/json",
+                   "X-Runner-Id": self._runner_id}
         return self._transport("POST", self.base + path,
                                json.dumps(payload).encode("utf-8"),
                                headers, timeout)

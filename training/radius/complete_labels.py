@@ -92,9 +92,14 @@ def complete(split: str, only_source: str | None, min_score: float,
     audit = (DATA / f"completion_audit_{split}.jsonl").open(
         "a", encoding="utf-8")
 
-    # Lazy teacher init — one ontology per source (its missing classes only)
+    # Lazy teacher init — one ontology per source (its missing classes only).
+    # GroundingDINO first: boxes-only is all we need, ~half the VRAM and
+    # install weight of GroundedSAM2 (which adds masks we'd discard).
     from autodistill.detection import CaptionOntology
-    from autodistill_grounded_sam_2 import GroundedSAM2
+    try:
+        from autodistill_grounding_dino import GroundingDINO as Teacher
+    except ImportError:
+        from autodistill_grounded_sam_2 import GroundedSAM2 as Teacher
 
     # Precompute per-source image lists so PROGRESS markers report a global %
     selected = [(k, m) for k, m in todo.items()
@@ -108,7 +113,7 @@ def complete(split: str, only_source: str | None, min_score: float,
         for cls in missing:
             for phrase in PROMPTS[cls]:
                 ontology[phrase] = cls
-        teacher = GroundedSAM2(ontology=CaptionOntology(ontology))
+        teacher = Teacher(ontology=CaptionOntology(ontology))
         images = images_by_source[source_key]
         print(f"{source_key}: completing {missing} over {len(images)} images")
         _progress(done_imgs, total_imgs,

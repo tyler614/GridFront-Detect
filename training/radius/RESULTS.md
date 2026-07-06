@@ -37,6 +37,17 @@ v1.1 re-runs the full recipe with Tyler's logins + field data later.
 - 23:48 hardhat_hf + Open Images downloads started
 - 23:52 runner daemon polling the laptop dispatcher (:9003) — toml escape bug
   fixed (literal strings)
+- 00:07 Mendeley conn-reset; discovered D: is a FLAKY THUMB DRIVE → re-pointed
+  the data junction to C:\RadiusData (internal disk); resume-loop script v2
+- 00:20 v2 downloaded all 9.4GB in ~6 min (26 MB/s link!) BUT PowerShell 5.1
+  Expand-Archive can't read Zip64 (>4GB) archives → silent fail → script
+  deleted the zip after the failed unzip (twice). Lessons: tar.exe for
+  extraction, verify-extracted-count BEFORE deleting, never trust stale log
+  markers across script generations (two ghost "done" signals), never
+  taskkill stale PIDs (PID reuse).
+- 00:41 Open Images copy complete: 3,449 far-person images kept (of 12k
+  candidates)
+- ~01:00 Mendeley v3 (tar-based, verified delete) + hardhat v3 relaunched
 - (updating as events land)
 
 ## Stage results
