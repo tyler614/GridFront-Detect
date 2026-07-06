@@ -1,0 +1,7 @@
+# Heavy local artifacts — never committed
+data/
+third_party/
+runs/
+export/
+.venv/
+*.bundle
