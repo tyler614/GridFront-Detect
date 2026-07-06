@@ -40,19 +40,39 @@ def main(ckpt: Path, version: str, w: int, h: int, shaves: int) -> None:
     out_dir = HERE / "export" / f"radius-{version}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    cmd = ["tools", str(ckpt), "--imgsz", f"{w} {h}", "--version", "yolov6r4",
-           "--use-rvc2", "--output-remote-url", "false"]
-    print("+", " ".join(cmd), "\n(if the CLI is unavailable, upload the .pt "
-          "at tools.luxonis.com — YOLOv6, shape "
-          f"{w} {h}, RVC2, {shaves} shaves, superblob OFF)")
-    r = subprocess.run(cmd, cwd=out_dir)
+    # Path: YOLOv6's own ONNX exporter (no mmcv) -> blobconverter cloud
+    # compile (FP16, OpenVINO 2021.4). The luxonis `tools` CLI needs mmcv,
+    # which does not build on Windows — this route is dependency-light and
+    # headless. YOLOv6 R2+ heads are anchor-free decoded outputs; DepthAI
+    # 2.x YoloSpatialDetectionNetwork parses them with anchors=[] metadata
+    # (same as the zoo yolov6n blob). BENCH-VERIFY detections before flash.
+    y6 = HERE.parent / "third_party" / "YOLOv6"
+    onnx_path = out_dir / f"radius-{version}.onnx"
+    cmd = [sys.executable, str(y6 / "deploy" / "ONNX" / "export_onnx.py"),
+           "--weights", str(ckpt), "--img-size", str(h), str(w),
+           "--batch-size", "1", "--simplify", "--device", "cpu"]
+    print("+", " ".join(cmd))
+    r = subprocess.run(cmd, cwd=y6)
     if r.returncode != 0:
-        sys.exit("tools CLI failed — use the tools.luxonis.com web path")
+        sys.exit("YOLOv6 ONNX export failed")
+    exported = ckpt.with_suffix(".onnx")
+    if not exported.exists():
+        cands = list(ckpt.parent.glob("*.onnx"))
+        if not cands:
+            sys.exit("no ONNX produced")
+        exported = max(cands, key=lambda p: p.stat().st_mtime)
+    exported.replace(onnx_path)
 
-    blobs = list(out_dir.rglob("*.blob"))
-    if not blobs:
-        sys.exit("no blob produced")
-    blob = max(blobs, key=lambda p: p.stat().st_size)
+    import blobconverter
+    blob = Path(blobconverter.from_onnx(
+        model=str(onnx_path),
+        data_type="FP16",
+        shaves=shaves,
+        version="2021.4",
+        optimizer_params=["--mean_values=[0,0,0]",
+                          "--scale_values=[255,255,255]"],
+        output_dir=str(out_dir),
+    ))
     dest_blob = MODELS / f"radius-{version}.blob"
     shutil.copy2(blob, dest_blob)
 
