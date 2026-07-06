@@ -18,6 +18,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +28,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 Y6 = HERE / "third_party" / "YOLOv6"
 DATA_YAML = HERE / "data" / "radius" / "data.yaml"
+
+EPOCHS_S1 = 120
+EPOCHS_S2 = 25
 
 # Augmentation intent (applied via YOLOv6 config file):
 #   mosaic 1.0 (off last 15 epochs), mixup 0.1, hsv strong, degrees 8,
@@ -34,11 +40,34 @@ DATA_YAML = HERE / "data" / "radius" / "data.yaml"
 # data/radius/train with empty label files.
 
 
-def run(args: list[str]) -> None:
-    print("+", " ".join(args))
-    r = subprocess.run(args, cwd=Y6)
-    if r.returncode != 0:
-        sys.exit(r.returncode)
+def run(args: list[str], total_epochs: int | None = None) -> None:
+    """Run a YOLOv6 tool, echoing its output. With total_epochs set, also
+    emit `PROGRESS {json}` lines (parsed by runner/runner.py) as the
+    `<epoch>/<last>` counters in the training log advance."""
+    print("+", " ".join(args), flush=True)
+    proc = subprocess.Popen(
+        args, cwd=Y6, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace",
+        env=dict(os.environ, PYTHONUNBUFFERED="1"))
+    epoch_re = re.compile(r"(\d+)/(\d+)")
+    last_epoch = -1
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        if not total_epochs:
+            continue
+        m = epoch_re.search(line)
+        if m and int(m.group(2)) == total_epochs - 1:
+            ep = int(m.group(1))
+            if last_epoch < ep < total_epochs:
+                last_epoch = ep
+                print("PROGRESS " + json.dumps({
+                    "stage_pct": round(100.0 * ep / total_epochs, 1),
+                    "metrics": {"epoch": ep, "total_epochs": total_epochs},
+                }), flush=True)
+    rc = proc.wait()
+    if rc != 0:
+        sys.exit(rc)
 
 
 def stage1() -> None:
@@ -49,7 +78,7 @@ def stage1() -> None:
          "--data-path", str(DATA_YAML),
          "--img-size", "640",
          "--batch-size", "32",
-         "--epochs", "120",
+         "--epochs", str(EPOCHS_S1),
          "--device", "0",
          "--use_syncbn",
          "--output-dir", str(HERE / "runs"),
@@ -57,7 +86,7 @@ def stage1() -> None:
          "--distill",              # v6 self-distillation
          "--teacher_model_path", "",  # from-scratch: fill after 1st run to
                                       # self-distill from your own best ckpt
-         ])
+         ], total_epochs=EPOCHS_S1)
 
 
 def stage2(ckpt: str) -> None:
@@ -70,13 +99,13 @@ def stage2(ckpt: str) -> None:
          "--data-path", str(DATA_YAML),
          "--img-size", "640",
          "--batch-size", "32",
-         "--epochs", "25",
+         "--epochs", str(EPOCHS_S2),
          "--device", "0",
          "--check-images", "--check-labels",
          "--output-dir", str(HERE / "runs"),
          "--name", "radius_s2",
          "--pretrained", ckpt,
-         ])
+         ], total_epochs=EPOCHS_S2)
 
 
 if __name__ == "__main__":

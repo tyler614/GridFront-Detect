@@ -51,6 +51,17 @@ PROMPTS = {
 }
 
 
+def _progress(done: int, total: int, message: str,
+              metrics: dict | None = None) -> None:
+    """Emit a `PROGRESS {json}` marker (parsed by runner/runner.py so the
+    platform can show stage_pct). Plain stdout noise for humans otherwise."""
+    doc = {"stage_pct": round(100.0 * done / max(1, total), 1),
+           "message": message}
+    if metrics:
+        doc["metrics"] = metrics
+    print("PROGRESS " + json.dumps(doc), flush=True)
+
+
 def _iou(a, b) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
@@ -85,18 +96,23 @@ def complete(split: str, only_source: str | None, min_score: float,
     from autodistill.detection import CaptionOntology
     from autodistill_grounded_sam_2 import GroundedSAM2
 
-    for source_key, missing in todo.items():
-        if only_source and source_key != only_source:
-            continue
-        if not missing:
-            continue
+    # Precompute per-source image lists so PROGRESS markers report a global %
+    selected = [(k, m) for k, m in todo.items()
+                if m and not (only_source and k != only_source)]
+    images_by_source = {k: sorted(img_dir.glob(f"{k}__*")) for k, _ in selected}
+    total_imgs = sum(len(v) for v in images_by_source.values())
+    done_imgs = 0
+
+    for source_key, missing in selected:
         ontology = {}
         for cls in missing:
             for phrase in PROMPTS[cls]:
                 ontology[phrase] = cls
         teacher = GroundedSAM2(ontology=CaptionOntology(ontology))
-        images = sorted(img_dir.glob(f"{source_key}__*"))
+        images = images_by_source[source_key]
         print(f"{source_key}: completing {missing} over {len(images)} images")
+        _progress(done_imgs, total_imgs,
+                  f"{source_key}: completing {missing} ({len(images)} images)")
         added_total = 0
         for img in images:
             lbl = lbl_dir / (img.stem + ".txt")
@@ -126,6 +142,11 @@ def complete(split: str, only_source: str | None, min_score: float,
                     "image": img.name, "source": source_key,
                     "added": len(new_lines)}) + "\n")
                 added_total += len(new_lines)
+            done_imgs += 1
+            if done_imgs % 25 == 0 or done_imgs == total_imgs:
+                _progress(done_imgs, total_imgs,
+                          f"{source_key}: {done_imgs}/{total_imgs} images",
+                          {"pseudo_boxes_added": added_total})
         print(f"  +{added_total} pseudo-boxes")
     audit.close()
     print("Done. Spot-check ~200 images/source: python complete_labels.py --audit")
