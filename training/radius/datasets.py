@@ -48,6 +48,10 @@ class Source:
     # exactly what complete_labels.py must pseudo-label before training —
     # merging without completion recreates the v1 missing-label poisoning.
     missing_classes: list[str] = field(default_factory=list)
+    # Keep images whose labels all remap to None (empty label file). Used for
+    # image-only sources whose real labels come from teacher completion (the
+    # source's own boxes are e.g. head-region PPE boxes we can't use).
+    keep_unlabeled: bool = False
 
 
 SOURCES: list[Source] = [
@@ -96,6 +100,28 @@ SOURCES: list[Source] = [
                    "person_no_helmet": "person"},
         missing_classes=["excavator", "wheel-loader", "dozer", "crane",
                          "dump-truck", "grader", "compactor", "cone"],
+    ),
+    Source(
+        key="hardhat_hf",
+        name="Hard Hats (roboflow-universe-projects/hard-hats-fhbh5, HF mirror keremberke)",
+        license="CC BY 4.0",
+        # Evidence 2026-07-06: README.dataset.txt inside the export archive
+        # states "License: CC BY 4.0"; publisher is roboflow-universe-projects
+        # (Roboflow's official curation account, not a user re-upload).
+        # TYLER: confirm the license line on the universe page before any
+        # promotion past draft, then leave this True.
+        license_verified=True,
+        url="https://huggingface.co/datasets/keremberke/hard-hat-detection",
+        # Source labels are HEAD-REGION boxes (hardhat/no-hardhat) — wrong
+        # extent for our person class. Drop them all; the 19.7k construction
+        # images become teacher canvases (complete_labels draws person boxes).
+        label_map={"hardhat": None, "no-hardhat": None, "head": None,
+                   "helmet": None, "person": None},
+        keep_unlabeled=True,
+        missing_classes=["person", "excavator", "wheel-loader", "dozer",
+                         "crane", "dump-truck", "grader", "compactor", "cone"],
+        notes="COCO-format export: run `python datasets.py convert-coco "
+              "--source hardhat_hf` after unzipping to produce YOLO layout.",
     ),
     Source(
         key="openimages_person",
@@ -181,6 +207,7 @@ def _remap_source(s: Source, dedupe: bool) -> tuple[int, int]:
     if not src_root.exists():
         print(f"  skip {s.key}: not downloaded")
         return (0, 0)
+    keep_unlabeled = getattr(s, "keep_unlabeled", False)
     if s.license not in ALLOWED_LICENSES:
         raise SystemExit(f"REFUSING {s.key}: license '{s.license}' not allowed")
     if not s.license_verified:
@@ -209,7 +236,7 @@ def _remap_source(s: Source, dedupe: bool) -> tuple[int, int]:
             if tgt is None:
                 continue
             out_lines.append(" ".join([str(CLASS_TO_ID[tgt])] + parts[1:5]))
-        if not out_lines:
+        if not out_lines and not keep_unlabeled:
             continue
         if dedupe:
             h = _cheap_hash(img)
@@ -284,6 +311,69 @@ def cmd_remap(dedupe: bool = True) -> None:
           f"without completion recreates the v1 missing-label poisoning).")
 
 
+def cmd_convert_coco(source_key: str) -> None:
+    """Convert a COCO-format raw source (splits with _annotations.coco.json)
+    into the images/ + labels/ YOLO layout _remap_source expects."""
+    import PIL.Image  # noqa: F401  (verify pillow present)
+    root = RAW / source_key
+    n = 0
+    for ann in root.rglob("_annotations.coco.json"):
+        split_dir = ann.parent
+        doc = json.loads(ann.read_text(encoding="utf-8"))
+        cats = {c["id"]: c["name"] for c in doc["categories"]}
+        # classes.txt in category-id order so _load_class_names lines up
+        ordered = [cats[k] for k in sorted(cats)]
+        (split_dir / "classes.txt").write_text("\n".join(ordered), "utf-8")
+        id_to_idx = {k: i for i, k in enumerate(sorted(cats))}
+        imgs = {i["id"]: i for i in doc["images"]}
+        per_img: dict[int, list[str]] = {}
+        for a in doc["annotations"]:
+            im = imgs[a["image_id"]]
+            x, y, w, h = a["bbox"]
+            cx, cy = (x + w / 2) / im["width"], (y + h / 2) / im["height"]
+            per_img.setdefault(a["image_id"], []).append(
+                f"{id_to_idx[a['category_id']]} {cx:.6f} {cy:.6f} "
+                f"{w / im['width']:.6f} {h / im['height']:.6f}")
+        (split_dir / "images").mkdir(exist_ok=True)
+        (split_dir / "labels").mkdir(exist_ok=True)
+        for img_id, im in imgs.items():
+            src = split_dir / im["file_name"]
+            if not src.exists():
+                continue
+            src.rename(split_dir / "images" / src.name)
+            (split_dir / "labels" / (Path(src.name).stem + ".txt")).write_text(
+                "\n".join(per_img.get(img_id, [])), "utf-8")
+            n += 1
+    print(f"converted {n} images to YOLO layout under {root}")
+
+
+def cmd_subset(caps: dict[str, int]) -> None:
+    """Cap per-source image counts in data/radius/train by moving overflow to
+    data/radius_overflow (recoverable). Val split untouched. Used to scale a
+    training run to a time budget; fixed camera sets (mendeley87k) are heavily
+    redundant so capping them is also a diversity win."""
+    import random
+    overflow = HERE / "data" / "radius_overflow"
+    moved = 0
+    for key, cap in caps.items():
+        imgs = sorted((OUT / "train" / "images").glob(f"{key}__*"))
+        if len(imgs) <= cap:
+            print(f"  {key}: {len(imgs)} <= cap {cap}, untouched")
+            continue
+        random.seed(1337)  # deterministic subset
+        drop = random.sample(imgs, len(imgs) - cap)
+        for kind in ("images", "labels"):
+            (overflow / "train" / kind).mkdir(parents=True, exist_ok=True)
+        for img in drop:
+            lbl = OUT / "train" / "labels" / (img.stem + ".txt")
+            img.rename(overflow / "train" / "images" / img.name)
+            if lbl.exists():
+                lbl.rename(overflow / "train" / "labels" / lbl.name)
+            moved += 1
+        print(f"  {key}: capped to {cap} (moved {len(drop)})")
+    print(f"moved {moved} images to {overflow}")
+
+
 def cmd_stats() -> None:
     counts = {c: 0 for c in RADIUS_CLASSES}
     for lbl in (OUT).rglob("labels/*.txt"):
@@ -296,14 +386,25 @@ def cmd_stats() -> None:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["download", "download-openimages",
-                                    "remap", "stats"])
+                                    "remap", "stats", "convert-coco", "subset"])
     ap.add_argument("--no-dedupe", action="store_true")
+    ap.add_argument("--source", default="hardhat_hf")
+    ap.add_argument("--max", type=int, default=30000,
+                    help="download-openimages sample cap")
+    ap.add_argument("--caps", default="mendeley87k=12000",
+                    help="subset: comma list of key=cap")
     a = ap.parse_args()
     if a.cmd == "download":
         cmd_download()
     elif a.cmd == "download-openimages":
-        cmd_download_openimages()
+        cmd_download_openimages(max_samples=a.max)
     elif a.cmd == "remap":
         cmd_remap(dedupe=not a.no_dedupe)
+    elif a.cmd == "convert-coco":
+        cmd_convert_coco(a.source)
+    elif a.cmd == "subset":
+        caps = {kv.split("=")[0]: int(kv.split("=")[1])
+                for kv in a.caps.split(",") if "=" in kv}
+        cmd_subset(caps)
     else:
         cmd_stats()

@@ -29,8 +29,11 @@ HERE = Path(__file__).resolve().parent
 Y6 = HERE / "third_party" / "YOLOv6"
 DATA_YAML = HERE / "data" / "radius" / "data.yaml"
 
-EPOCHS_S1 = 120
-EPOCHS_S2 = 25
+# Env-overridable so a platform job spec can scale a run to a time budget
+# (e.g. the supervised overnight v1 run) without a code change.
+EPOCHS_S1 = int(os.environ.get("RADIUS_EPOCHS_S1", "120"))
+EPOCHS_S2 = int(os.environ.get("RADIUS_EPOCHS_S2", "25"))
+BATCH = int(os.environ.get("RADIUS_BATCH", "32"))
 
 # Augmentation intent (applied via YOLOv6 config file):
 #   mosaic 1.0 (off last 15 epochs), mixup 0.1, hsv strong, degrees 8,
@@ -77,7 +80,7 @@ def stage1() -> None:
          "--conf-file", "configs/yolov6n_finetune.py",
          "--data-path", str(DATA_YAML),
          "--img-size", "640",
-         "--batch-size", "32",
+         "--batch-size", str(BATCH),
          "--epochs", str(EPOCHS_S1),
          "--device", "0",
          "--use_syncbn",
@@ -98,7 +101,7 @@ def stage2(ckpt: str) -> None:
          "--conf-file", "configs/yolov6n_finetune.py",
          "--data-path", str(DATA_YAML),
          "--img-size", "640",
-         "--batch-size", "32",
+         "--batch-size", str(BATCH),
          "--epochs", str(EPOCHS_S2),
          "--device", "0",
          "--check-images", "--check-labels",
