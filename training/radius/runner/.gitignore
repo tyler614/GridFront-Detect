@@ -1,0 +1,4 @@
+# local-only: token + per-machine run artifacts
+runner.toml
+logs/
+state/

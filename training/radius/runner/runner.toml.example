@@ -1,0 +1,28 @@
+# GridFront Radius runner config.
+# COPY to runner.toml (gitignored — it holds the bearer token) and fill in.
+
+# Platform base URL, no trailing slash.
+platform_url = "https://platform.gridfront.io"
+
+# RADIUS_RUNNER_TOKEN issued by the platform.
+token = "paste-RADIUS_RUNNER_TOKEN-here"
+
+# Stable id for this machine — shows up on the platform against every claim.
+runner_id = "gaming-pc-3060"
+
+# ── optional (defaults shown) ────────────────────────────────────────────
+
+# Repo checkout root. Default: auto-detected two levels up from this file.
+# repo_root = 'C:\Users\tyler\scout'
+
+# Python used for the pipeline stages (must be the training venv with torch
+# etc. — see ../HANDOVER.md Setup). Default: the python running runner.py.
+# python_exe = 'C:\Users\tyler\scout\training\radius\.venv\Scripts\python.exe'
+
+# Seconds between claim polls when idle.
+# poll_interval = 30
+
+# Only set if training/radius/data is a junction to another drive AND you
+# want the runner to read MANIFEST.json / eval bench from the real location.
+# The pipeline scripts always resolve training/radius/data themselves.
+# data_root = 'D:\radius-data'
