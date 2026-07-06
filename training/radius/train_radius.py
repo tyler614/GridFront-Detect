@@ -34,6 +34,11 @@ DATA_YAML = HERE / "data" / "radius" / "data.yaml"
 EPOCHS_S1 = int(os.environ.get("RADIUS_EPOCHS_S1", "120"))
 EPOCHS_S2 = int(os.environ.get("RADIUS_EPOCHS_S2", "25"))
 BATCH = int(os.environ.get("RADIUS_BATCH", "32"))
+# Windows: high worker counts explode OpenBLAS thread pools ("Memory
+# allocation still failed") — keep low and pin BLAS to one thread.
+WORKERS = int(os.environ.get("RADIUS_WORKERS", "2"))
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("OMP_NUM_THREADS", "2")
 
 # Augmentation intent (applied via YOLOv6 config file):
 #   mosaic 1.0 (off last 15 epochs), mixup 0.1, hsv strong, degrees 8,
@@ -90,6 +95,7 @@ def stage1() -> None:
          "--device", "0",
          "--output-dir", str(HERE / "runs"),
          "--name", "radius_s1",
+         "--workers", str(WORKERS),
          ], total_epochs=EPOCHS_S1)
 
 
