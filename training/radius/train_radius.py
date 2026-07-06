@@ -76,19 +76,20 @@ def run(args: list[str], total_epochs: int | None = None) -> None:
 def stage1() -> None:
     if not Y6.exists():
         sys.exit(f"clone meituan/YOLOv6 into {Y6} first (see docstring)")
+    # configs/yolov6n.py = the FROM-SCRATCH config (no pretrained field) —
+    # the finetune config would pull Meituan's COCO checkpoint, which violates
+    # the weights-provenance rule. Self-distillation needs a teacher ckpt we
+    # don't have on a from-scratch first run — enable it in v1.1 by passing
+    # --distill --teacher_model_path <our own best_ckpt>.
     run([sys.executable, "tools/train.py",
-         "--conf-file", "configs/yolov6n_finetune.py",
+         "--conf-file", "configs/yolov6n.py",
          "--data-path", str(DATA_YAML),
          "--img-size", "640",
          "--batch-size", str(BATCH),
          "--epochs", str(EPOCHS_S1),
          "--device", "0",
-         "--use_syncbn",
          "--output-dir", str(HERE / "runs"),
          "--name", "radius_s1",
-         "--distill",              # v6 self-distillation
-         "--teacher_model_path", "",  # from-scratch: fill after 1st run to
-                                      # self-distill from your own best ckpt
          ], total_epochs=EPOCHS_S1)
 
 
