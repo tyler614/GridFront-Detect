@@ -78,7 +78,7 @@ def run(args: list[str], total_epochs: int | None = None) -> None:
         sys.exit(rc)
 
 
-def stage1() -> None:
+def stage1(resume: str = "") -> None:
     if not Y6.exists():
         sys.exit(f"clone meituan/YOLOv6 into {Y6} first (see docstring)")
     # configs/yolov6n.py = the FROM-SCRATCH config (no pretrained field) —
@@ -86,17 +86,22 @@ def stage1() -> None:
     # the weights-provenance rule. Self-distillation needs a teacher ckpt we
     # don't have on a from-scratch first run — enable it in v1.1 by passing
     # --distill --teacher_model_path <our own best_ckpt>.
-    run([sys.executable, "tools/train.py",
-         "--conf-file", "configs/yolov6n.py",
-         "--data-path", str(DATA_YAML),
-         "--img-size", "640",
-         "--batch-size", str(BATCH),
-         "--epochs", str(EPOCHS_S1),
-         "--device", "0",
-         "--output-dir", str(HERE / "runs"),
-         "--name", "radius_s1",
-         "--workers", str(WORKERS),
-         ], total_epochs=EPOCHS_S1)
+    args = [sys.executable, "tools/train.py",
+            "--conf-file", "configs/yolov6n.py",
+            "--data-path", str(DATA_YAML),
+            "--img-size", "640",
+            "--batch-size", str(BATCH),
+            "--epochs", str(EPOCHS_S1),
+            "--device", "0",
+            "--output-dir", str(HERE / "runs"),
+            "--name", "radius_s1",
+            "--workers", str(WORKERS),
+            ]
+    if resume:
+        # YOLOv6 --resume <ckpt> restores model/optimizer/epoch and reloads
+        # the run's saved args, continuing in the ckpt's own run dir.
+        args += ["--resume", resume]
+    run(args, total_epochs=EPOCHS_S1)
 
 
 def stage2(ckpt: str) -> None:
@@ -123,5 +128,7 @@ if __name__ == "__main__":
     ap.add_argument("stage", choices=["stage1", "stage2"])
     ap.add_argument("--ckpt", default=str(HERE / "runs" / "radius_s1" /
                                           "weights" / "best_ckpt.pt"))
+    ap.add_argument("--resume", default="",
+                    help="stage1 only: resume YOLOv6 training from this ckpt")
     a = ap.parse_args()
-    stage1() if a.stage == "stage1" else stage2(a.ckpt)
+    stage1(a.resume) if a.stage == "stage1" else stage2(a.ckpt)
