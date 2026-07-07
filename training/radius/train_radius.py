@@ -109,8 +109,21 @@ def stage2(ckpt: str) -> None:
     # via --img-size 640 + letterbox off in the dataloader — patch or accept
     # 640 square with eval at 640x384 (validate BOTH; the eval gate uses the
     # deployed transform either way).
+    #
+    # YOLOv6's tools/train.py has NO --pretrained flag — the finetune
+    # checkpoint comes from the config's `pretrained` field (the stock
+    # yolov6n_finetune.py points it at Meituan's COCO weights, which the
+    # provenance rule forbids). Derive a config with pretrained = OUR ckpt.
+    src = Y6 / "configs" / "yolov6n_finetune.py"
+    dst = Y6 / "configs" / "yolov6n_radius_ft.py"
+    cfg, n = re.subn(r"pretrained\s*=\s*'[^']*'",
+                     "pretrained=r'%s'" % ckpt,
+                     src.read_text(encoding="utf-8"), count=1)
+    if n != 1:
+        sys.exit(f"could not patch the pretrained field in {src}")
+    dst.write_text(cfg, encoding="utf-8")
     run([sys.executable, "tools/train.py",
-         "--conf-file", "configs/yolov6n_finetune.py",
+         "--conf-file", "configs/yolov6n_radius_ft.py",
          "--data-path", str(DATA_YAML),
          "--img-size", "640",
          "--batch-size", str(BATCH),
@@ -119,7 +132,6 @@ def stage2(ckpt: str) -> None:
          "--check-images", "--check-labels",
          "--output-dir", str(HERE / "runs"),
          "--name", "radius_s2",
-         "--pretrained", ckpt,
          ], total_epochs=EPOCHS_S2)
 
 
